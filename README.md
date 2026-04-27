@@ -1,4 +1,4 @@
-[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/taxuspt-garmin-mcp-badge.png)](https://mseep.ai/app/taxuspt-garmin-mcp)
+Original Code from https://github.com/Taxuspt/garmin_mcp
 
 # Garmin MCP Server
 
