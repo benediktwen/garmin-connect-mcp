@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: garmin-health-mcp
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: GARMIN_EMAIL
+        sync: false
+      - key: GARMIN_PASSWORD
+        sync: false
