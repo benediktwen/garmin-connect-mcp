@@ -89,19 +89,24 @@ def init_api(email, password):
     import io
 
     try:
+        # Using Oauth1 and Oauth2 tokens from base64 encoded string
+        base64_token = os.getenv("GARMINTOKENS_BASE64")
+        if base64_token:
+            print(
+                "Trying to login to Garmin Connect using base64 token from environment...\n",
+                file=sys.stderr,
+            )
+            garmin = Garmin(is_cn=is_cn)
+            garmin.login(base64_token)
+            return garmin
+
         # Using Oauth1 and OAuth2 token files from directory
         print(
             f"Trying to login to Garmin Connect using token data from directory '{tokenstore}'...\n",
             file=sys.stderr,
         )
-
-        # Using Oauth1 and Oauth2 tokens from base64 encoded string
-        # print(
-        #     f"Trying to login to Garmin Connect using token data from file '{tokenstore_base64}'...\n"
-        # )
-        # dir_path = os.path.expanduser(tokenstore_base64)
-        # with open(dir_path, "r") as token_file:
-        #     tokenstore = token_file.read()
+        garmin = Garmin(is_cn=is_cn)
+        garmin.login(tokenstore)
 
         # Suppress stderr for token validation to avoid confusing library errors
         old_stderr = sys.stderr
