@@ -4,7 +4,5 @@ services:
     runtime: docker
     dockerfilePath: ./Dockerfile
     envVars:
-      - key: GARMIN_OAUTH1
-        sync: false
-      - key: GARMIN_OAUTH2
+      - key: GARMINTOKENS_BASE64
         sync: false
