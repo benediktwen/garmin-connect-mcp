@@ -20,3 +20,9 @@ docs/*
 .gitignore
 playground/*
 tests/fixtures/captured/*
+
+# Garmin token files — never commit
+.garminconnect/
+.garminconnect_base64
+garmin_tokens.json
+*.garminconnect*
