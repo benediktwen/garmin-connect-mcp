@@ -27,7 +27,11 @@ logger = logging.getLogger(__name__)
 
 is_cn = os.getenv("GARMIN_IS_CN", "false").lower() == "true"
 
-app = FastMCP("Garmin Health MCP Server")
+app = FastMCP(
+    "Garmin Health MCP Server",
+    host="0.0.0.0",
+    port=int(os.getenv("PORT", 8000)),
+)
 
 _MODULES = [
     activity_management,
@@ -81,5 +85,4 @@ def main() -> None:
 
     workout_templates.register_resources(app)
 
-    port = int(os.getenv("PORT", 8000))
-    app.run(transport="sse", host="0.0.0.0", port=port)
+    app.run(transport="sse")
