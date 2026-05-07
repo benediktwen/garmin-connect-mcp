@@ -79,7 +79,6 @@ def main() -> None:
         module.configure(garmin)
         module.register_tools(app)
 
-    workout_templates.configure(garmin)
     workout_templates.register_resources(app)
 
     app.run()
