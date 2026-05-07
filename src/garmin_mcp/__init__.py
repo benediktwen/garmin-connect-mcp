@@ -81,4 +81,5 @@ def main() -> None:
 
     workout_templates.register_resources(app)
 
-    app.run()
+    port = int(os.getenv("PORT", 8000))
+    app.run(transport="sse", host="0.0.0.0", port=port)
