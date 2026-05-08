@@ -2,12 +2,13 @@ import base64
 import logging
 import os
 import sys
-from typing import Any
 
 import anyio
 import uvicorn
 from garminconnect import Garmin
+from mcp.server.auth.settings import AuthSettings, ClientRegistrationOptions, RevocationOptions
 from mcp.server.fastmcp import FastMCP
+from pydantic import AnyHttpUrl
 
 from garmin_mcp import (
     activity_management,
@@ -24,13 +25,14 @@ from garmin_mcp import (
     workout_templates,
     workouts,
 )
+from garmin_mcp.github_oauth_provider import GitHubOAuthProvider
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 is_cn = os.getenv("GARMIN_IS_CN", "false").lower() == "true"
 
-app = FastMCP("Garmin Health MCP Server")
+SERVER_URL = "https://garmin-health-sync.onrender.com"
 
 _MODULES = [
     activity_management,
@@ -48,37 +50,45 @@ _MODULES = [
 ]
 
 
-class _BearerAuthMiddleware:
-    """ASGI middleware: blocks all requests without a valid bearer token.
+def _build_app() -> tuple[FastMCP, GitHubOAuthProvider]:
+    github_client_id = os.getenv("GITHUB_CLIENT_ID", "")
+    github_client_secret = os.getenv("GITHUB_CLIENT_SECRET", "")
 
-    Uses MCP_SECRET — a permanent, never-rotating secret stored in Render.
-    Separate from GARMINTOKENS_BASE64 so that Garmin token renewal never
-    requires updating Claude's MCP configuration.
-    """
+    if not github_client_id or not github_client_secret:
+        logger.error("GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET must be set.")
+        sys.exit(1)
 
-    def __init__(self, asgi_app: Any) -> None:
-        self._app = asgi_app
+    oauth_provider = GitHubOAuthProvider(
+        github_client_id=github_client_id,
+        github_client_secret=github_client_secret,
+        server_url=SERVER_URL,
+    )
 
-    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
-        if scope["type"] in ("http", "websocket"):
-            expected = os.getenv("MCP_SECRET", "")
-            if expected:
-                headers = dict(scope.get("headers", []))
-                auth = headers.get(b"authorization", b"").decode()
-                if auth != f"Bearer {expected}":
-                    if scope["type"] == "http":
-                        body = b"Unauthorized"
-                        await send({
-                            "type": "http.response.start",
-                            "status": 401,
-                            "headers": [
-                                [b"content-type", b"text/plain"],
-                                [b"content-length", str(len(body)).encode()],
-                            ],
-                        })
-                        await send({"type": "http.response.body", "body": body})
-                    return
-        await self._app(scope, receive, send)
+    auth_settings = AuthSettings(
+        issuer_url=AnyHttpUrl(SERVER_URL),
+        resource_server_url=None,
+        client_registration_options=ClientRegistrationOptions(
+            enabled=True,
+            valid_scopes=["mcp"],
+            default_scopes=["mcp"],
+        ),
+        revocation_options=RevocationOptions(enabled=True),
+    )
+
+    mcp_app = FastMCP(
+        "Garmin Health MCP Server",
+        auth_server_provider=oauth_provider,
+        auth=auth_settings,
+        host="0.0.0.0",
+        port=int(os.getenv("PORT", 8000)),
+    )
+
+    # GitHub redirects here after user login
+    @mcp_app.custom_route("/auth/callback", methods=["GET"])
+    async def github_callback(request):
+        return await oauth_provider.handle_github_callback(request)
+
+    return mcp_app, oauth_provider
 
 
 def init_api() -> Garmin:
@@ -106,11 +116,10 @@ def init_api() -> Garmin:
     sys.exit(1)
 
 
-async def _serve() -> None:
-    starlette_app = app.sse_app()
-    protected_app = _BearerAuthMiddleware(starlette_app)
+async def _serve(mcp_app: FastMCP) -> None:
+    starlette_app = mcp_app.sse_app()
     config = uvicorn.Config(
-        protected_app,
+        starlette_app,
         host="0.0.0.0",
         port=int(os.getenv("PORT", 8000)),
         log_level="info",
@@ -120,15 +129,13 @@ async def _serve() -> None:
 
 def main() -> None:
     garmin = init_api()
+    mcp_app, _ = _build_app()
 
     for module in _MODULES:
         module.configure(garmin)
-        module.register_tools(app)
+        module.register_tools(mcp_app)
 
-    workout_templates.register_resources(app)
+    workout_templates.register_resources(mcp_app)
 
-    if not os.getenv("MCP_SECRET"):
-        logger.warning("MCP_SECRET not set — server is publicly accessible!")
-    else:
-        logger.info("Bearer token auth enabled via MCP_SECRET.")
-    anyio.run(_serve)
+    logger.info("GitHub OAuth enabled — only '%s' can authenticate.", os.getenv("GITHUB_ALLOWED_USER", "benediktwen"))
+    anyio.run(_serve, mcp_app)

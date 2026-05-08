@@ -6,5 +6,9 @@ services:
     envVars:
       - key: GARMINTOKENS_BASE64
         sync: false
-      - key: MCP_SECRET
+      - key: GITHUB_CLIENT_ID
         sync: false
+      - key: GITHUB_CLIENT_SECRET
+        sync: false
+      - key: GITHUB_ALLOWED_USER
+        value: benediktwen
