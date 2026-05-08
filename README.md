@@ -13,43 +13,87 @@ Exposes 96+ Garmin Connect tools via MCP so Claude can query health data directl
 - Body composition, weight, hydration
 - Workouts, gear, nutrition, challenges
 
-## Deployment (Render)
+## Security
 
-### One-time token generation
+The server requires **bearer token authentication** on every request:
+```
+Authorization: Bearer <MCP_SECRET>
+```
+
+Two secrets exist, each with a different purpose:
+
+| Secret | Where | Rotates? | Purpose |
+|---|---|---|---|
+| `MCP_SECRET` | Render only | Never | MCP access control — set once, stays forever |
+| `GARMINTOKENS_BASE64` | Render only | ~every 6 months | Garmin OAuth session |
+
+Claude's config only ever needs `MCP_SECRET`. When `GARMINTOKENS_BASE64` rotates,
+only Render needs to be updated — Claude's config stays untouched.
+
+Unauthenticated requests receive `401 Unauthorized`.
+
+## Setup
+
+### Step 1 — Generate Garmin token (one-time, run locally)
 
 ```bash
-# Run locally — uses widget+cffi strategy to bypass SSO rate limiting
 ~/.local/bin/uv run --python 3.12 python generate_token.py
 ```
 
-Enter password and MFA code when prompted. Copy the `GARMINTOKENS_BASE64` output.
+Enter email, password, and MFA code. Copy the printed `GARMINTOKENS_BASE64` value.
 
-### Render setup
+### Step 2 — Configure Render
 
-1. Render Dashboard → `garmin-health-sync` → Environment Variables
-2. Set `GARMINTOKENS_BASE64` = token from above
-3. Manual Deploy
+Render Dashboard → `garmin-health-sync` → Environment Variables:
 
-Expected logs on success:
+| Variable | Value |
+|---|---|
+| `GARMINTOKENS_BASE64` | Output from Step 1 |
+| `MCP_SECRET` | A strong random string you generate once (e.g. `openssl rand -hex 32`) |
+
+Then: **Manual Deploy**.
+
+### Step 3 — Configure Claude (one-time, never changes)
+
+Add to `~/.claude.json` (global) or `.mcp.json` (project-level):
+
+```json
+{
+  "mcpServers": {
+    "garmin": {
+      "type": "sse",
+      "url": "https://garmin-health-sync.onrender.com/sse",
+      "headers": {
+        "Authorization": "Bearer <MCP_SECRET>"
+      }
+    }
+  }
+}
 ```
-Trying to login to Garmin Connect using token from environment...
-Login successful using GARMINTOKENS_BASE64.
-Garmin Connect client initialized successfully.
-```
 
-### Token renewal
+Replace `<MCP_SECRET>` with the value you set in Render. **This never needs to change.**
 
-OAuth tokens auto-refresh as long as the server runs regularly. If the server was offline for an extended period, re-run `generate_token.py` and update the Render env var.
+## Token renewal (every ~6 months)
 
-## Configuration
+When `GARMINTOKENS_BASE64` expires:
 
-| Env var | Default | Description |
-|---|---|---|
-| `GARMINTOKENS_BASE64` | — | Base64-encoded OAuth token JSON (required on Render) |
-| `GARMIN_IS_CN` | `false` | Set `true` for Garmin Connect China |
+1. Run `generate_token.py` locally
+2. Update `GARMINTOKENS_BASE64` in Render → Manual Deploy
+
+Claude's config does **not** need to be touched.
+
+## Configuration reference
+
+| Env var | Required | Rotates | Description |
+|---|---|---|---|
+| `GARMINTOKENS_BASE64` | ✅ | ~6 months | Garmin OAuth session token |
+| `MCP_SECRET` | ✅ | Never | MCP bearer token for Claude access |
+| `GARMIN_IS_CN` | — | — | Set `true` for Garmin Connect China |
 
 ## Architecture
 
 - **Runtime:** Docker on Render Free tier
-- **Auth:** OAuth tokens via `garminconnect>=0.3.2`, widget+cffi strategy for rate-limit bypass
+- **Transport:** SSE (Server-Sent Events) via FastMCP + uvicorn
+- **MCP auth:** Static bearer token (`MCP_SECRET`) checked via ASGI middleware
+- **Garmin auth:** OAuth via `garminconnect` ≥ 0.3.2, widget+cffi strategy
 - **Library:** [python-garminconnect](https://github.com/cyberjunky/python-garminconnect)

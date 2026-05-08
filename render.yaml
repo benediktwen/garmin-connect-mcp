@@ -6,3 +6,5 @@ services:
     envVars:
       - key: GARMINTOKENS_BASE64
         sync: false
+      - key: MCP_SECRET
+        sync: false
