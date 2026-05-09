@@ -7,10 +7,16 @@ Flow:
   3. Claude → POST /token → exchange code for access token
   4. Claude uses Bearer access token on every MCP request
 
-Tokens are stored in memory — users re-authenticate after server restart
-(happens at most once per cold start on Render Free Tier).
+Tokens are persisted to Upstash Redis (UPSTASH_REDIS_REST_URL +
+UPSTASH_REDIS_REST_TOKEN) so re-authentication is not required after
+Render cold starts. Only _pending and _auth_codes are kept in-memory
+(they are short-lived and tied to an active browser session).
+
+If Redis env vars are not set the provider falls back to in-memory storage
+(tokens lost on restart).
 """
 
+import json
 import logging
 import os
 import secrets
@@ -33,12 +39,51 @@ from starlette.responses import HTMLResponse, RedirectResponse
 logger = logging.getLogger(__name__)
 
 GITHUB_AUTHORIZE_URL = "https://github.com/login/oauth/authorize"
-GITHUB_TOKEN_URL = "https://github.com/login/oauth/access_token"
-GITHUB_USER_URL = "https://api.github.com/user"
+GITHUB_TOKEN_URL     = "https://github.com/login/oauth/access_token"
+GITHUB_USER_URL      = "https://api.github.com/user"
 
-ACCESS_TOKEN_TTL = 3600 * 8    # 8 hours
-REFRESH_TOKEN_TTL = 3600 * 24 * 30  # 30 days
-AUTH_CODE_TTL = 300            # 5 minutes (exchanged immediately)
+ACCESS_TOKEN_TTL  = 3600 * 8          # 8 hours
+REFRESH_TOKEN_TTL = 3600 * 24 * 30   # 30 days
+AUTH_CODE_TTL     = 300               # 5 minutes (exchanged immediately)
+
+
+def _model_to_dict(obj) -> dict:
+    """Serialize a Pydantic v1/v2 model or dataclass to a plain dict."""
+    if hasattr(obj, "model_dump"):
+        return obj.model_dump(mode="json")
+    if hasattr(obj, "dict"):
+        return obj.dict()
+    return obj.__dict__
+
+
+class _UpstashRedis:
+    """Minimal synchronous Upstash Redis REST client (no extra dependencies)."""
+
+    def __init__(self, url: str, token: str) -> None:
+        self._url   = url.rstrip("/")
+        self._token = token
+
+    def get(self, key: str) -> str | None:
+        with httpx.Client(timeout=5) as client:
+            r = client.get(
+                f"{self._url}/get/{key}",
+                headers={"Authorization": f"Bearer {self._token}"},
+            )
+            r.raise_for_status()
+            result = r.json().get("result")
+            return result  # None if key doesn't exist
+
+    def set(self, key: str, value: str) -> None:
+        with httpx.Client(timeout=5) as client:
+            r = client.post(
+                f"{self._url}/set/{key}",
+                headers={
+                    "Authorization": f"Bearer {self._token}",
+                    "Content-Type": "application/json",
+                },
+                content=json.dumps([value]),
+            )
+            r.raise_for_status()
 
 
 class GitHubOAuthProvider(OAuthAuthorizationServerProvider):
@@ -47,20 +92,88 @@ class GitHubOAuthProvider(OAuthAuthorizationServerProvider):
 
     Only the GitHub account set in GITHUB_ALLOWED_USER (default: benediktwen)
     can complete the OAuth flow and receive an MCP access token.
+
+    Tokens and client registrations are persisted to Upstash Redis so they
+    survive Render cold starts. Falls back to in-memory if Redis is not configured.
     """
 
     def __init__(self, github_client_id: str, github_client_secret: str, server_url: str) -> None:
-        self._github_client_id = github_client_id
+        self._github_client_id     = github_client_id
         self._github_client_secret = github_client_secret
-        self._callback_url = server_url.rstrip("/") + "/auth/callback"
-        self._allowed_user = os.getenv("GITHUB_ALLOWED_USER", "benediktwen").lower()
+        self._callback_url         = server_url.rstrip("/") + "/auth/callback"
+        self._allowed_user         = os.getenv("GITHUB_ALLOWED_USER", "benediktwen").lower()
+        self._redis_key            = os.getenv("TOKEN_STORE_KEY", "mcp:garmin:token_store")
 
-        # In-memory stores — cleared on restart; clients simply re-authenticate
-        self._clients: dict[str, OAuthClientInformationFull] = {}
-        self._pending: dict[str, dict] = {}          # github_state → MCP params
-        self._auth_codes: dict[str, AuthorizationCode] = {}
-        self._access_tokens: dict[str, AccessToken] = {}
-        self._refresh_tokens: dict[str, RefreshToken] = {}
+        redis_url   = os.getenv("UPSTASH_REDIS_REST_URL")
+        redis_token = os.getenv("UPSTASH_REDIS_REST_TOKEN")
+        if redis_url and redis_token:
+            self._redis = _UpstashRedis(redis_url, redis_token)
+            logger.info("✅ Upstash Redis token store configured (key: %s)", self._redis_key)
+        else:
+            self._redis = None
+            logger.warning("⚠️  No Redis configured — tokens stored in memory only (lost on restart)")
+
+        # Short-lived — in-memory only (tied to active browser sessions)
+        self._pending:    dict[str, dict]                      = {}
+        self._auth_codes: dict[str, AuthorizationCode]        = {}
+
+        # Persisted across restarts via Redis
+        self._clients:        dict[str, OAuthClientInformationFull] = {}
+        self._access_tokens:  dict[str, AccessToken]                = {}
+        self._refresh_tokens: dict[str, RefreshToken]               = {}
+
+        self._load_store()
+
+    # ------------------------------------------------------------------ #
+    # Persistence                                                          #
+    # ------------------------------------------------------------------ #
+
+    def _load_store(self) -> None:
+        if not self._redis:
+            return
+        try:
+            raw = self._redis.get(self._redis_key)
+            if not raw:
+                logger.info("No token store found in Redis — starting fresh.")
+                return
+            data = json.loads(raw)
+            self._clients = {
+                k: OAuthClientInformationFull.model_validate(v)
+                for k, v in data.get("clients", {}).items()
+            }
+            self._access_tokens = {
+                k: AccessToken(**v)
+                for k, v in data.get("access_tokens", {}).items()
+            }
+            self._refresh_tokens = {
+                k: RefreshToken(**v)
+                for k, v in data.get("refresh_tokens", {}).items()
+            }
+            logger.info(
+                "✅ Token store loaded from Redis (%d clients, %d access tokens, %d refresh tokens)",
+                len(self._clients), len(self._access_tokens), len(self._refresh_tokens),
+            )
+        except Exception as exc:
+            logger.warning("Could not load token store from Redis: %s — starting fresh.", exc)
+
+    def _save_store(self) -> None:
+        if not self._redis:
+            return
+        try:
+            now = time.time()
+            valid_access  = {k: v for k, v in self._access_tokens.items()
+                             if v.expires_at is None or v.expires_at > now}
+            valid_refresh = {k: v for k, v in self._refresh_tokens.items()
+                             if v.expires_at is None or v.expires_at > now}
+            data = {
+                "clients":        {k: _model_to_dict(v) for k, v in self._clients.items()},
+                "access_tokens":  {k: _model_to_dict(v) for k, v in valid_access.items()},
+                "refresh_tokens": {k: _model_to_dict(v) for k, v in valid_refresh.items()},
+                "saved_at":       now,
+            }
+            self._redis.set(self._redis_key, json.dumps(data, default=str))
+        except Exception as exc:
+            logger.error("Failed to save token store to Redis: %s", exc)
 
     # ------------------------------------------------------------------ #
     # Client registration (dynamic — Claude registers itself on first use) #
@@ -72,6 +185,7 @@ class GitHubOAuthProvider(OAuthAuthorizationServerProvider):
     async def register_client(self, client_info: OAuthClientInformationFull) -> None:
         logger.info("Registering OAuth client: %s", client_info.client_id)
         self._clients[client_info.client_id] = client_info
+        self._save_store()
 
     # ------------------------------------------------------------------ #
     # Authorization: redirect user to GitHub                              #
@@ -80,19 +194,19 @@ class GitHubOAuthProvider(OAuthAuthorizationServerProvider):
     async def authorize(self, client: OAuthClientInformationFull, params: AuthorizationParams) -> str:
         github_state = secrets.token_urlsafe(32)
         self._pending[github_state] = {
-            "client_id": client.client_id,
-            "code_challenge": params.code_challenge,
-            "redirect_uri": str(params.redirect_uri),
+            "client_id":                        client.client_id,
+            "code_challenge":                   params.code_challenge,
+            "redirect_uri":                     str(params.redirect_uri),
             "redirect_uri_provided_explicitly": params.redirect_uri_provided_explicitly,
-            "scopes": params.scopes or [],
-            "mcp_state": params.state,
-            "resource": params.resource,
+            "scopes":                           params.scopes or [],
+            "mcp_state":                        params.state,
+            "resource":                         params.resource,
         }
         github_params = {
-            "client_id": self._github_client_id,
+            "client_id":    self._github_client_id,
             "redirect_uri": self._callback_url,
-            "scope": "read:user",
-            "state": github_state,
+            "scope":        "read:user",
+            "state":        github_state,
         }
         url = GITHUB_AUTHORIZE_URL + "?" + urlencode(github_params)
         logger.info("Redirecting to GitHub OAuth: %s", url)
@@ -103,22 +217,16 @@ class GitHubOAuthProvider(OAuthAuthorizationServerProvider):
     # ------------------------------------------------------------------ #
 
     async def handle_github_callback(self, request: Request) -> HTMLResponse | RedirectResponse:
-        code = request.query_params.get("code")
+        code         = request.query_params.get("code")
         github_state = request.query_params.get("state")
-        error = request.query_params.get("error")
+        error        = request.query_params.get("error")
 
         if error:
             logger.warning("GitHub OAuth error: %s", error)
-            return HTMLResponse(
-                f"<h1>Authorization failed</h1><p>GitHub error: {error}</p>",
-                status_code=400,
-            )
+            return HTMLResponse(f"<h1>Authorization failed</h1><p>GitHub error: {error}</p>", status_code=400)
 
         if not code or not github_state:
-            return HTMLResponse(
-                "<h1>Invalid callback</h1><p>Missing code or state.</p>",
-                status_code=400,
-            )
+            return HTMLResponse("<h1>Invalid callback</h1><p>Missing code or state.</p>", status_code=400)
 
         pending = self._pending.pop(github_state, None)
         if not pending:
@@ -133,10 +241,10 @@ class GitHubOAuthProvider(OAuthAuthorizationServerProvider):
                 resp = await http.post(
                     GITHUB_TOKEN_URL,
                     data={
-                        "client_id": self._github_client_id,
+                        "client_id":     self._github_client_id,
                         "client_secret": self._github_client_secret,
-                        "code": code,
-                        "redirect_uri": self._callback_url,
+                        "code":          code,
+                        "redirect_uri":  self._callback_url,
                     },
                     headers={"Accept": "application/json"},
                 )
@@ -144,37 +252,25 @@ class GitHubOAuthProvider(OAuthAuthorizationServerProvider):
                 token_data = resp.json()
         except Exception as exc:
             logger.error("GitHub token exchange failed: %s", exc)
-            return HTMLResponse(
-                "<h1>GitHub error</h1><p>Could not exchange authorization code.</p>",
-                status_code=502,
-            )
+            return HTMLResponse("<h1>GitHub error</h1><p>Could not exchange authorization code.</p>", status_code=502)
 
         github_access_token = token_data.get("access_token")
         if not github_access_token:
             logger.error("No access_token in GitHub response: %s", token_data)
-            return HTMLResponse(
-                "<h1>GitHub error</h1><p>No access token received.</p>",
-                status_code=502,
-            )
+            return HTMLResponse("<h1>GitHub error</h1><p>No access token received.</p>", status_code=502)
 
         # Fetch GitHub user and enforce allowlist
         try:
             async with httpx.AsyncClient(timeout=10) as http:
                 resp = await http.get(
                     GITHUB_USER_URL,
-                    headers={
-                        "Authorization": f"Bearer {github_access_token}",
-                        "Accept": "application/json",
-                    },
+                    headers={"Authorization": f"Bearer {github_access_token}", "Accept": "application/json"},
                 )
                 resp.raise_for_status()
                 user_data = resp.json()
         except Exception as exc:
             logger.error("GitHub user lookup failed: %s", exc)
-            return HTMLResponse(
-                "<h1>GitHub error</h1><p>Could not fetch user info.</p>",
-                status_code=502,
-            )
+            return HTMLResponse("<h1>GitHub error</h1><p>Could not fetch user info.</p>", status_code=502)
 
         github_username = user_data.get("login", "").lower()
         logger.info("GitHub OAuth: user='%s' allowed='%s'", github_username, self._allowed_user)
@@ -182,8 +278,7 @@ class GitHubOAuthProvider(OAuthAuthorizationServerProvider):
         if github_username != self._allowed_user:
             logger.warning("Access denied for GitHub user: %s", github_username)
             return HTMLResponse(
-                f"<h1>Access Denied</h1>"
-                f"<p>GitHub account <b>{user_data.get('login')}</b> is not authorized to use this server.</p>",
+                f"<h1>Access Denied</h1><p>GitHub account <b>{user_data.get('login')}</b> is not authorized.</p>",
                 status_code=403,
             )
 
@@ -200,11 +295,7 @@ class GitHubOAuthProvider(OAuthAuthorizationServerProvider):
             resource=pending.get("resource"),
         )
 
-        redirect_url = construct_redirect_uri(
-            pending["redirect_uri"],
-            code=mcp_code,
-            state=pending.get("mcp_state"),
-        )
+        redirect_url = construct_redirect_uri(pending["redirect_uri"], code=mcp_code, state=pending.get("mcp_state"))
         logger.info("GitHub OAuth complete for '%s' — redirecting to Claude", github_username)
         return RedirectResponse(redirect_url, status_code=302)
 
@@ -225,7 +316,7 @@ class GitHubOAuthProvider(OAuthAuthorizationServerProvider):
     ) -> OAuthToken:
         self._auth_codes.pop(authorization_code.code, None)  # one-time use
 
-        access_token = secrets.token_urlsafe(32)
+        access_token  = secrets.token_urlsafe(32)
         refresh_token = secrets.token_urlsafe(32)
 
         self._access_tokens[access_token] = AccessToken(
@@ -241,6 +332,7 @@ class GitHubOAuthProvider(OAuthAuthorizationServerProvider):
             scopes=authorization_code.scopes,
             expires_at=int(time.time()) + REFRESH_TOKEN_TTL,
         )
+        self._save_store()
 
         return OAuthToken(
             access_token=access_token,
@@ -266,8 +358,8 @@ class GitHubOAuthProvider(OAuthAuthorizationServerProvider):
     ) -> OAuthToken:
         self._refresh_tokens.pop(refresh_token.token, None)  # rotate
 
-        access_token = secrets.token_urlsafe(32)
-        new_refresh = secrets.token_urlsafe(32)
+        access_token     = secrets.token_urlsafe(32)
+        new_refresh      = secrets.token_urlsafe(32)
         effective_scopes = scopes or refresh_token.scopes
 
         self._access_tokens[access_token] = AccessToken(
@@ -282,6 +374,7 @@ class GitHubOAuthProvider(OAuthAuthorizationServerProvider):
             scopes=effective_scopes,
             expires_at=int(time.time()) + REFRESH_TOKEN_TTL,
         )
+        self._save_store()
 
         return OAuthToken(
             access_token=access_token,
@@ -299,7 +392,6 @@ class GitHubOAuthProvider(OAuthAuthorizationServerProvider):
         at = self._access_tokens.get(token)
         if at and (at.expires_at is None or at.expires_at > time.time()):
             return at
-        # Expired — clean up
         self._access_tokens.pop(token, None)
         return None
 
@@ -308,3 +400,4 @@ class GitHubOAuthProvider(OAuthAuthorizationServerProvider):
             self._access_tokens.pop(token.token, None)
         else:
             self._refresh_tokens.pop(token.token, None)
+        self._save_store()

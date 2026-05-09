@@ -12,3 +12,9 @@ services:
         sync: false
       - key: GITHUB_ALLOWED_USER
         value: benediktwen
+      - key: UPSTASH_REDIS_REST_URL
+        sync: false
+      - key: UPSTASH_REDIS_REST_TOKEN
+        sync: false
+      - key: TOKEN_STORE_KEY
+        value: mcp:garmin:token_store
