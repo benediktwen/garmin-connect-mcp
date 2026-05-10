@@ -81,7 +81,7 @@ class _UpstashRedis:
                     "Authorization": f"Bearer {self._token}",
                     "Content-Type": "application/json",
                 },
-                content=json.dumps([value]),
+                content=json.dumps(value),
             )
             r.raise_for_status()
 
