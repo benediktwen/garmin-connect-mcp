@@ -57,33 +57,35 @@ def _model_to_dict(obj) -> dict:
 
 
 class _UpstashRedis:
-    """Minimal synchronous Upstash Redis REST client (no extra dependencies)."""
+    """Minimal synchronous Upstash Redis REST client (no extra dependencies).
+
+    Uses the Upstash command API (POST / with ["CMD", args...]) to avoid
+    JSON double-encoding issues that occur with the /set/{key} endpoint.
+    """
 
     def __init__(self, url: str, token: str) -> None:
         self._url   = url.rstrip("/")
         self._token = token
 
-    def get(self, key: str) -> str | None:
-        with httpx.Client(timeout=5) as client:
-            r = client.get(
-                f"{self._url}/get/{key}",
-                headers={"Authorization": f"Bearer {self._token}"},
-            )
-            r.raise_for_status()
-            result = r.json().get("result")
-            return result  # None if key doesn't exist
-
-    def set(self, key: str, value: str) -> None:
+    def _cmd(self, *args) -> object:
         with httpx.Client(timeout=5) as client:
             r = client.post(
-                f"{self._url}/set/{key}",
+                self._url,
                 headers={
                     "Authorization": f"Bearer {self._token}",
                     "Content-Type": "application/json",
                 },
-                content=json.dumps(value),
+                content=json.dumps(list(args)),
             )
             r.raise_for_status()
+            return r.json().get("result")
+
+    def get(self, key: str) -> str | None:
+        result = self._cmd("GET", key)
+        return result  # None if key doesn't exist
+
+    def set(self, key: str, value: str) -> None:
+        self._cmd("SET", key, value)
 
 
 class GitHubOAuthProvider(OAuthAuthorizationServerProvider):
@@ -136,7 +138,7 @@ class GitHubOAuthProvider(OAuthAuthorizationServerProvider):
             if not raw:
                 logger.info("No token store found in Redis — starting fresh.")
                 return
-            data = json.loads(raw)
+            data = json.loads(raw) if isinstance(raw, str) else raw
             self._clients = {
                 k: OAuthClientInformationFull.model_validate(v)
                 for k, v in data.get("clients", {}).items()
