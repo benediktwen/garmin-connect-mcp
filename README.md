@@ -13,6 +13,23 @@ Exposes 96+ Garmin Connect tools via MCP so Claude can query health data directl
 - Body composition, weight, hydration
 - Workouts, gear, nutrition, challenges
 
+## Infrastructure
+
+| Component | Provider | Region |
+|---|---|---|
+| MCP server | Render (Free, Instant) | Frankfurt (EU) |
+| Token store | Upstash Redis | Frankfurt (EU) |
+| Identity provider | GitHub OAuth | — |
+| Garmin API | Garmin Connect | EU |
+
+> **Note — Render Free Tier cold starts:** The free Instant type spins down after
+> ~15 minutes of inactivity. The first request after a cold start takes a few
+> seconds while the container restarts. Upstash Redis ensures OAuth tokens
+> (access + refresh) survive restarts so Claude does **not** need to
+> re-authenticate after a cold start. The `_pending` OAuth state is short-lived
+> and kept in-memory only — if a cold start happens mid-login flow, just
+> click Connect again.
+
 ## Security
 
 Access is protected by **GitHub OAuth** — only the configured GitHub account
@@ -39,16 +56,20 @@ Claude → /authorize → GitHub login (+ 2FA) → /auth/callback
 | `GITHUB_CLIENT_ID` | Render only | Never | GitHub OAuth App client ID |
 | `GITHUB_CLIENT_SECRET` | Render only | Never | GitHub OAuth App client secret |
 | `GITHUB_ALLOWED_USER` | render.yaml | Never | GitHub username allowed to connect |
+| `UPSTASH_REDIS_REST_URL` | Render only | Never | Upstash Redis endpoint |
+| `UPSTASH_REDIS_REST_TOKEN` | Render only | Never | Upstash Redis auth token |
 
 ## Setup
 
 ### Step 1 — GitHub OAuth App (one-time)
 
-Already created: **Claude MCP Servers** (`Ov23liJvwWff3lXGxbF7`)
+Create a GitHub OAuth App at Settings → Developer settings → OAuth Apps.
 
-Callback URL set to: `https://garmin-health-sync.onrender.com/auth/callback`
+- **Application name:** Claude MCP Servers (or any name)
+- **Homepage URL:** `https://garmin-health-sync.onrender.com`
+- **Callback URL:** `https://garmin-health-sync.onrender.com/auth/callback`
 
-To add the broker MCP later: add its callback URL in the same OAuth App.
+Note the **Client ID** and generate a **Client Secret** — both go into Render env vars.
 
 ### Step 2 — Configure Render
 
@@ -57,8 +78,10 @@ Render Dashboard → `garmin-health-sync` → Environment Variables:
 | Variable | Value |
 |---|---|
 | `GARMINTOKENS_BASE64` | Output from `generate_token.py` |
-| `GITHUB_CLIENT_ID` | `Ov23liJvwWff3lXGxbF7` |
-| `GITHUB_CLIENT_SECRET` | *(from GitHub OAuth App settings)* |
+| `GITHUB_CLIENT_ID` | From your GitHub OAuth App |
+| `GITHUB_CLIENT_SECRET` | From your GitHub OAuth App |
+| `UPSTASH_REDIS_REST_URL` | From Upstash console |
+| `UPSTASH_REDIS_REST_TOKEN` | From Upstash console |
 
 `GITHUB_ALLOWED_USER` is set to `benediktwen` via `render.yaml` — no manual entry needed.
 
@@ -99,21 +122,24 @@ Claude's config and GitHub OAuth are **not** affected.
 | `GITHUB_CLIENT_ID` | ✅ | Never | GitHub OAuth App client ID |
 | `GITHUB_CLIENT_SECRET` | ✅ | Never | GitHub OAuth App client secret |
 | `GITHUB_ALLOWED_USER` | ✅ | Never | GitHub username allowed to connect (in render.yaml) |
+| `UPSTASH_REDIS_REST_URL` | ✅ | Never | Upstash Redis REST endpoint |
+| `UPSTASH_REDIS_REST_TOKEN` | ✅ | Never | Upstash Redis auth token |
 | `GARMIN_IS_CN` | — | — | Set `true` for Garmin Connect China |
 
 ## Architecture
 
-- **Runtime:** Docker on Render Free tier
+- **Runtime:** Docker on Render Free Instant tier (Frankfurt)
 - **Transport:** SSE (Server-Sent Events) via FastMCP + uvicorn
 - **MCP auth:** GitHub OAuth 2.0 — server acts as Authorization Server, GitHub as Identity Provider
 - **User restriction:** GitHub username verified against `GITHUB_ALLOWED_USER` on every login
 - **Token lifetime:** 8 h access token, 30-day refresh token (rotated on each refresh)
+- **Token persistence:** Upstash Redis (Frankfurt) — tokens survive Render cold starts
 - **Garmin auth:** OAuth via `garminconnect` ≥ 0.3.2, widget+cffi strategy
 - **Library:** [python-garminconnect](https://github.com/cyberjunky/python-garminconnect)
 
 ## Shared GitHub OAuth App (synergy with broker MCP)
 
-The same GitHub OAuth App (`Claude MCP Servers`) can serve multiple MCP servers.
+The same GitHub OAuth App can serve multiple MCP servers.
 When the broker MCP is deployed, add its callback URL in the GitHub OAuth App settings:
 
 ```
