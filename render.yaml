@@ -3,6 +3,7 @@ services:
     name: garmin-health-sync
     runtime: docker
     dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
     envVars:
       - key: GARMINTOKENS_BASE64
         sync: false

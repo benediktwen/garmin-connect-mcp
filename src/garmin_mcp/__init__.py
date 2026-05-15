@@ -9,6 +9,8 @@ from garminconnect import Garmin
 from mcp.server.auth.settings import AuthSettings, ClientRegistrationOptions, RevocationOptions
 from mcp.server.fastmcp import FastMCP
 from pydantic import AnyHttpUrl
+from starlette.requests import Request
+from starlette.responses import JSONResponse
 
 from garmin_mcp import (
     activity_management,
@@ -85,8 +87,12 @@ def _build_app() -> tuple[FastMCP, GitHubOAuthProvider]:
 
     # GitHub redirects here after user login
     @mcp_app.custom_route("/auth/callback", methods=["GET"])
-    async def github_callback(request):
+    async def github_callback(request: Request):
         return await oauth_provider.handle_github_callback(request)
+
+    @mcp_app.custom_route("/health", methods=["GET"])
+    async def health(_request: Request) -> JSONResponse:
+        return JSONResponse({"status": "ok"})
 
     return mcp_app, oauth_provider
 
@@ -117,7 +123,7 @@ def init_api() -> Garmin:
 
 
 async def _serve(mcp_app: FastMCP) -> None:
-    starlette_app = mcp_app.sse_app()
+    starlette_app = mcp_app.streamable_http_app()
     config = uvicorn.Config(
         starlette_app,
         host="0.0.0.0",
