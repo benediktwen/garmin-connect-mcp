@@ -40,7 +40,7 @@ with 2FA (Authy). No shared secrets are stored in Claude's config.
 
 ```
 Claude → /authorize → GitHub login (+ 2FA) → /auth/callback
-       → username verified → MCP access token issued → SSE connection
+       → username verified → MCP access token issued → MCP connection
 ```
 
 1. Claude detects the MCP server requires OAuth
@@ -90,7 +90,7 @@ Then: **Manual Deploy**.
 ### Step 3 — Configure Claude (one-time, never changes)
 
 **Claude.ai web** (connector dialog):
-- URL: `https://garmin-health-sync.onrender.com/sse`
+- URL: `https://garmin-health-sync.onrender.com/mcp`
 - OAuth fields: leave empty — the server advertises its own OAuth metadata
 
 Claude Desktop and iPhone sync automatically from the web connector.
@@ -129,7 +129,7 @@ Claude's config and GitHub OAuth are **not** affected.
 ## Architecture
 
 - **Runtime:** Docker on Render Free Instant tier (Frankfurt)
-- **Transport:** SSE (Server-Sent Events) via FastMCP + uvicorn
+- **Transport:** Streamable HTTP (MCP 1.x standard) via FastMCP + uvicorn
 - **MCP auth:** GitHub OAuth 2.0 — server acts as Authorization Server, GitHub as Identity Provider
 - **User restriction:** GitHub username verified against `GITHUB_ALLOWED_USER` on every login
 - **Token lifetime:** 8 h access token, 30-day refresh token (rotated on each refresh)
