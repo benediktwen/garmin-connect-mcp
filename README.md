@@ -66,14 +66,14 @@ Claude → /authorize → GitHub login (+ 2FA) → /auth/callback
 Create a GitHub OAuth App at Settings → Developer settings → OAuth Apps.
 
 - **Application name:** Claude MCP Servers (or any name)
-- **Homepage URL:** `https://garmin-health-sync.onrender.com`
-- **Callback URL:** `https://garmin-health-sync.onrender.com/auth/callback`
+- **Homepage URL:** `https://garmin-connect-mcp-mrne.onrender.com`
+- **Callback URL:** `https://garmin-connect-mcp-mrne.onrender.com/auth/callback`
 
 Note the **Client ID** and generate a **Client Secret** — both go into Render env vars.
 
 ### Step 2 — Configure Render
 
-Render Dashboard → `garmin-health-sync` → Environment Variables:
+Render Dashboard → `garmin-connect-mcp` → Environment Variables:
 
 | Variable | Value |
 |---|---|
@@ -90,7 +90,7 @@ Then: **Manual Deploy**.
 ### Step 3 — Configure Claude (one-time, never changes)
 
 **Claude.ai web** (connector dialog):
-- URL: `https://garmin-health-sync.onrender.com/mcp`
+- URL: `https://garmin-connect-mcp-mrne.onrender.com/mcp`
 - OAuth fields: leave empty — the server advertises its own OAuth metadata
 
 Claude Desktop and iPhone sync automatically from the web connector.
