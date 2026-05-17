@@ -68,7 +68,7 @@ def _build_app() -> tuple[FastMCP, GitHubOAuthProvider]:
 
     auth_settings = AuthSettings(
         issuer_url=AnyHttpUrl(SERVER_URL),
-        resource_server_url=None,
+        resource_server_url=AnyHttpUrl(SERVER_URL),
         client_registration_options=ClientRegistrationOptions(
             enabled=True,
             valid_scopes=["mcp"],

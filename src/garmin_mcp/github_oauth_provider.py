@@ -364,11 +364,13 @@ class GitHubOAuthProvider(OAuthAuthorizationServerProvider):
         new_refresh      = secrets.token_urlsafe(32)
         effective_scopes = scopes or refresh_token.scopes
 
+        resource = getattr(refresh_token, "resource", None)
         self._access_tokens[access_token] = AccessToken(
             token=access_token,
             client_id=client.client_id,
             scopes=effective_scopes,
             expires_at=int(time.time()) + ACCESS_TOKEN_TTL,
+            resource=resource,
         )
         self._refresh_tokens[new_refresh] = RefreshToken(
             token=new_refresh,
