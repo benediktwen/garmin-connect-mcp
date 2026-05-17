@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: garmin-health-sync
+    name: garmin-connect-mcp
     runtime: docker
     dockerfilePath: ./Dockerfile
     healthCheckPath: /health

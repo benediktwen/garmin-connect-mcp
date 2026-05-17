@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 is_cn = os.getenv("GARMIN_IS_CN", "false").lower() == "true"
 
-SERVER_URL = "https://garmin-health-sync.onrender.com"
+SERVER_URL = os.getenv("SERVER_URL", "https://garmin-connect-mcp-mrne.onrender.com")
 
 _MODULES = [
     activity_management,
