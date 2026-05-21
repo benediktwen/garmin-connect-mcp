@@ -60,6 +60,10 @@ def _build_app() -> tuple[FastMCP, GitHubOAuthProvider]:
         logger.error("GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET must be set.")
         sys.exit(1)
 
+    if not SERVER_URL:
+        logger.error("SERVER_URL must be set to the public base URL of this service.")
+        sys.exit(1)
+
     oauth_provider = GitHubOAuthProvider(
         github_client_id=github_client_id,
         github_client_secret=github_client_secret,
