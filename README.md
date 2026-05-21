@@ -96,7 +96,7 @@ Claude Desktop and mobile sync automatically from the web connector.
 
 | Env var | Required | Rotates | Description |
 |---|---|---|---|
-| `GARMINTOKENS_BASE64` | ✅ | ~6 months | Garmin OAuth session token (from `generate_token.py`) |
+| `GARMINTOKENS_BASE64` | ✅ | ~90 days | Garmin OAuth session token (from `generate_token.py`) |
 | `GITHUB_CLIENT_ID` | ✅ | Never | GitHub OAuth App client ID |
 | `GITHUB_CLIENT_SECRET` | ✅ | Never | GitHub OAuth App client secret |
 | `GITHUB_ALLOWED_USER` | ✅ | Never | GitHub username allowed to connect |
@@ -105,9 +105,18 @@ Claude Desktop and mobile sync automatically from the web connector.
 | `UPSTASH_REDIS_REST_TOKEN` | ✅ | Never | Redis auth token |
 | `GARMIN_IS_CN` | — | — | Set `true` for Garmin Connect China |
 
-## Garmin token renewal (~every 6 months)
+## Garmin token renewal (~every 90 days)
 
-When `GARMINTOKENS_BASE64` expires:
+The server logs the exact token expiry date at every startup. Check your hosting
+platform's logs for lines like:
+
+```
+Garmin refresh token valid until 2026-08-15 (84 days).
+Garmin refresh token expires in 12 day(s) on 2026-06-03 — regenerate GARMINTOKENS_BASE64 soon.
+Garmin refresh token has EXPIRED — all API calls will fail. Regenerate GARMINTOKENS_BASE64.
+```
+
+When the token needs renewal:
 
 1. Run `generate_token.py` locally
 2. Update `GARMINTOKENS_BASE64` in your hosting platform → redeploy
