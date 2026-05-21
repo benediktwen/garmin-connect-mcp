@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 is_cn = os.getenv("GARMIN_IS_CN", "false").lower() == "true"
 
-SERVER_URL = os.getenv("SERVER_URL", "https://garmin-connect-mcp-mrne.onrender.com")
+SERVER_URL = os.getenv("SERVER_URL", "")
 
 _MODULES = [
     activity_management,
@@ -143,5 +143,5 @@ def main() -> None:
 
     workout_templates.register_resources(mcp_app)
 
-    logger.info("GitHub OAuth enabled — only '%s' can authenticate.", os.getenv("GITHUB_ALLOWED_USER", "benediktwen"))
+    logger.info("GitHub OAuth enabled — only '%s' can authenticate.", os.getenv("GITHUB_ALLOWED_USER", "(not configured)"))
     anyio.run(_serve, mcp_app)
