@@ -92,7 +92,7 @@ class GitHubOAuthProvider(OAuthAuthorizationServerProvider):
     """
     MCP OAuth Authorization Server backed by GitHub as upstream identity provider.
 
-    Only the GitHub account set in GITHUB_ALLOWED_USER (default: benediktwen)
+    Only the GitHub account set in GITHUB_ALLOWED_USER
     can complete the OAuth flow and receive an MCP access token.
 
     Tokens and client registrations are persisted to Upstash Redis so they
@@ -103,7 +103,7 @@ class GitHubOAuthProvider(OAuthAuthorizationServerProvider):
         self._github_client_id     = github_client_id
         self._github_client_secret = github_client_secret
         self._callback_url         = server_url.rstrip("/") + "/auth/callback"
-        self._allowed_user         = os.getenv("GITHUB_ALLOWED_USER", "benediktwen").lower()
+        self._allowed_user         = os.getenv("GITHUB_ALLOWED_USER", "").lower()
         self._redis_key            = os.getenv("TOKEN_STORE_KEY", "mcp:garmin:token_store")
 
         redis_url   = os.getenv("UPSTASH_REDIS_REST_URL")
