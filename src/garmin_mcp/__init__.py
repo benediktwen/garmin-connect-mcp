@@ -1,4 +1,5 @@
 import base64
+import datetime
 import logging
 import os
 import sys
@@ -101,6 +102,23 @@ def _build_app() -> tuple[FastMCP, GitHubOAuthProvider]:
     return mcp_app, oauth_provider
 
 
+def _log_token_expiry(garmin: Garmin) -> None:
+    try:
+        token = garmin.garth.oauth2_token
+        expires_at = datetime.datetime.fromtimestamp(
+            token.refresh_token_expires_at, tz=datetime.timezone.utc
+        )
+        days_left = (expires_at - datetime.datetime.now(datetime.timezone.utc)).days
+        if token.refresh_expired:
+            logger.error("Garmin refresh token has EXPIRED — all API calls will fail. Regenerate GARMINTOKENS_BASE64.")
+        elif days_left <= 14:
+            logger.warning("Garmin refresh token expires in %d day(s) on %s — regenerate GARMINTOKENS_BASE64 soon.", days_left, expires_at.date())
+        else:
+            logger.info("Garmin refresh token valid until %s (%d days).", expires_at.date(), days_left)
+    except Exception as e:
+        logger.warning("Could not read token expiry: %s", e)
+
+
 def init_api() -> Garmin:
     b64 = os.getenv("GARMINTOKENS_BASE64")
     if b64:
@@ -108,6 +126,7 @@ def init_api() -> Garmin:
         token_json = base64.b64decode(b64).decode("utf-8")
         garmin = Garmin(is_cn=is_cn)
         garmin.login(token_json)
+        _log_token_expiry(garmin)
         logger.info("Login successful using GARMINTOKENS_BASE64.")
         return garmin
 
@@ -116,6 +135,7 @@ def init_api() -> Garmin:
         logger.info("Using local token files from %s", local)
         garmin = Garmin(is_cn=is_cn)
         garmin.login(local)
+        _log_token_expiry(garmin)
         logger.info("Garmin Connect client initialized successfully.")
         return garmin
 

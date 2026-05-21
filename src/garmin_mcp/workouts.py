@@ -249,11 +249,12 @@ def register_tools(app):
             if not workouts:
                 return "No workouts found."
 
-            # Curate the workout list
             curated = {
                 "count": len(workouts),
-                "workouts": [_curate_workout_summary(w) for w in workouts]
+                "workouts": [_curate_workout_summary(w) for w in workouts],
             }
+            if len(workouts) == 100:
+                curated["note"] = "Results capped at 100. There may be more workouts in your library."
 
             return json.dumps(curated, indent=2)
         except Exception as e:

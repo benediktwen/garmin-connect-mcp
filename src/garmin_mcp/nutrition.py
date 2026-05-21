@@ -200,12 +200,10 @@ def register_tools(app):
                 "nutritionContents": [nutrition],
             }
             url = "/nutrition-service/customFood"
-            resp = garmin_client.garth.put(
-                "connectapi", url, json=payload, api=True
-            )
-            if resp.status_code == 204:
+            result = garmin_client.connectapi(url, method="PUT", json=payload)
+            if result is None:
                 return "Custom food created (no response data returned)."
-            return json.dumps(resp.json(), indent=2)
+            return json.dumps(result, indent=2)
         except GarthHTTPError as e:
             body = ""
             if hasattr(e, "error") and hasattr(e.error, "response"):
@@ -288,12 +286,10 @@ def register_tools(app):
                 "nutritionContents": [nutrition],
             }
             url = "/nutrition-service/customFood"
-            resp = garmin_client.garth.put(
-                "connectapi", url, json=payload, api=True
-            )
-            if resp.status_code == 204:
+            result = garmin_client.connectapi(url, method="PUT", json=payload)
+            if result is None:
                 return "Custom food updated (no response data returned)."
-            return json.dumps(resp.json(), indent=2)
+            return json.dumps(result, indent=2)
         except GarthHTTPError as e:
             body = ""
             if hasattr(e, "error") and hasattr(e.error, "response"):
@@ -351,12 +347,10 @@ def register_tools(app):
                 ],
             }
             url = "/nutrition-service/food/logs"
-            resp = garmin_client.garth.put(
-                "connectapi", url, json=payload, api=True
-            )
-            if resp.status_code == 204:
+            result = garmin_client.connectapi(url, method="PUT", json=payload)
+            if result is None:
                 return "Food logged successfully."
-            return json.dumps(resp.json(), indent=2)
+            return json.dumps(result, indent=2)
         except GarthHTTPError as e:
             body = ""
             if hasattr(e, "error") and hasattr(e.error, "response"):
