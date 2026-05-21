@@ -78,7 +78,7 @@ def _build_app() -> tuple[FastMCP, GitHubOAuthProvider]:
     )
 
     mcp_app = FastMCP(
-        "Garmin Health MCP Server",
+        "Garmin Connect MCP",
         auth_server_provider=oauth_provider,
         auth=auth_settings,
         host="0.0.0.0",
