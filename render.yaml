@@ -13,6 +13,8 @@ services:
         sync: false
       - key: GITHUB_ALLOWED_USER
         sync: false
+      - key: SERVER_URL
+        sync: false
       - key: UPSTASH_REDIS_REST_URL
         sync: false
       - key: UPSTASH_REDIS_REST_TOKEN
