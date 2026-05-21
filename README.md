@@ -68,8 +68,6 @@ Create a GitHub OAuth App at **Settings → Developer settings → OAuth Apps**:
 
 Note the **Client ID** and generate a **Client Secret**.
 
-> Running multiple MCP services? You can reuse one GitHub OAuth App by adding
-> each service's callback URL under **Add Callback URL** in the app settings.
 
 ### Step 3 — Garmin token
 
