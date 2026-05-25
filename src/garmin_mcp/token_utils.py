@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import Tuple
 
 from garminconnect import Garmin
-from garth.exc import GarthHTTPError
 
 
 def get_token_path() -> str:
@@ -87,19 +86,12 @@ def validate_tokens(token_path: str = None, is_cn: bool = False) -> Tuple[bool, 
 
     except FileNotFoundError:
         return False, f"Token files not found in: {token_path}"
-    except GarthHTTPError as e:
+    except Exception as e:
         error_msg = str(e)
         if "401" in error_msg or "Unauthorized" in error_msg:
             return False, "Tokens expired or invalid"
         elif "403" in error_msg or "Forbidden" in error_msg:
             return False, "Access denied with current tokens"
-        else:
-            return False, f"Authentication error: {error_msg.split(':')[0]}"
-    except Exception as e:
-        error_msg = str(e)
-        # Clean up error message
-        if "401" in error_msg:
-            return False, "Tokens expired or invalid"
         else:
             return False, f"Validation error: {error_msg.split(':')[0]}"
     finally:

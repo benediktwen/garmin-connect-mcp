@@ -4,8 +4,6 @@ Nutrition/food logging functions for Garmin Connect MCP Server
 import json
 from typing import Optional
 
-from garth.exc import GarthHTTPError
-
 # The garmin_client will be set by the main file
 garmin_client = None
 
@@ -204,11 +202,6 @@ def register_tools(app):
             if result is None:
                 return "Custom food created (no response data returned)."
             return json.dumps(result, indent=2)
-        except GarthHTTPError as e:
-            body = ""
-            if hasattr(e, "error") and hasattr(e.error, "response"):
-                body = getattr(e.error.response, "text", "")
-            return f"Error creating custom food: {e} | Response: {body}"
         except Exception as e:
             return f"Error creating custom food: {str(e)}"
 
@@ -290,11 +283,6 @@ def register_tools(app):
             if result is None:
                 return "Custom food updated (no response data returned)."
             return json.dumps(result, indent=2)
-        except GarthHTTPError as e:
-            body = ""
-            if hasattr(e, "error") and hasattr(e.error, "response"):
-                body = getattr(e.error.response, "text", "")
-            return f"Error updating custom food: {e} | Response: {body}"
         except Exception as e:
             return f"Error updating custom food: {str(e)}"
 
@@ -351,11 +339,6 @@ def register_tools(app):
             if result is None:
                 return "Food logged successfully."
             return json.dumps(result, indent=2)
-        except GarthHTTPError as e:
-            body = ""
-            if hasattr(e, "error") and hasattr(e.error, "response"):
-                body = getattr(e.error.response, "text", "")
-            return f"Error logging food: {e} | Response: {body}"
         except Exception as e:
             return f"Error logging food: {str(e)}"
 

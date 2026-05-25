@@ -10,7 +10,6 @@ import sys
 import getpass
 
 import requests
-from garth.exc import GarthHTTPError
 from garminconnect import Garmin, GarminConnectAuthenticationError
 
 from garmin_mcp.token_utils import (
@@ -128,11 +127,11 @@ def authenticate(token_path: str, token_base64_path: str, force_reauth: bool = F
         garmin.login()
 
         # Save tokens to directory
-        garmin.garth.dump(token_path)
+        garmin.client.dump(token_path)
         print(f"\n✓ OAuth tokens saved to: {os.path.expanduser(token_path)}")
 
         # Save tokens as base64
-        token_base64 = garmin.garth.dumps()
+        token_base64 = garmin.client.dumps()
         expanded_base64_path = os.path.expanduser(token_base64_path)
         with open(expanded_base64_path, "w") as token_file:
             token_file.write(token_base64)
@@ -177,21 +176,6 @@ def authenticate(token_path: str, token_base64_path: str, force_reauth: bool = F
 
         return False
 
-    except GarthHTTPError as e:
-        error_msg = str(e)
-        print(f"\n✗ Authentication error", file=sys.stderr)
-
-        if "429" in error_msg:
-            print("  Too many requests. Please wait a few minutes and try again.", file=sys.stderr)
-        elif "401" in error_msg or "403" in error_msg:
-            print("  Invalid credentials. Please check your email and password.", file=sys.stderr)
-        elif "500" in error_msg or "503" in error_msg:
-            print("  Garmin Connect service issue. Please try again later.", file=sys.stderr)
-        else:
-            print(f"  {error_msg.split(':')[0]}", file=sys.stderr)
-
-        return False
-
     except requests.exceptions.HTTPError as e:
         print(f"\n✗ Network error", file=sys.stderr)
 
@@ -209,10 +193,15 @@ def authenticate(token_path: str, token_base64_path: str, force_reauth: bool = F
 
     except Exception as e:
         error_msg = str(e)
-        print(f"\n✗ Unexpected error", file=sys.stderr)
+        print(f"\n✗ Authentication error", file=sys.stderr)
 
-        # Only show detailed error in debug scenarios
-        if "timeout" in error_msg.lower():
+        if "429" in error_msg:
+            print("  Too many requests. Please wait a few minutes and try again.", file=sys.stderr)
+        elif "401" in error_msg or "403" in error_msg:
+            print("  Invalid credentials. Please check your email and password.", file=sys.stderr)
+        elif "500" in error_msg or "503" in error_msg:
+            print("  Garmin Connect service issue. Please try again later.", file=sys.stderr)
+        elif "timeout" in error_msg.lower():
             print("  Connection timeout. Please check your internet connection.", file=sys.stderr)
         elif "connection" in error_msg.lower():
             print("  Network connection issue. Please check your internet.", file=sys.stderr)
