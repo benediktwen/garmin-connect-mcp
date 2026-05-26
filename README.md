@@ -31,13 +31,14 @@ Claude → /authorize → GitHub login (+ 2FA) → /auth/callback
 ```
 
 Access is protected by **GitHub OAuth** — only the GitHub account set in
-`GITHUB_ALLOWED_USER` can authenticate. Every session requires a fresh GitHub
-login with 2FA. No shared secrets are stored in Claude's config.
+`GITHUB_ALLOWED_USER` can authenticate. GitHub login with 2FA is required
+once every 30 days (tokens are persisted to Redis). No shared secrets are
+stored in Claude's config.
 
 1. Claude detects the MCP server requires OAuth
 2. Browser opens — user logs in to GitHub with 2FA
 3. Server verifies the GitHub username matches `GITHUB_ALLOWED_USER`
-4. Claude receives a time-limited access token (8 h) with silent refresh (30 days)
+4. Claude receives a 30-day access token with a 30-day refresh token
 
 > **Cold start note:** If the hosting platform sleeps the container, the first
 > request after wake-up takes a few seconds. OAuth tokens are persisted to
@@ -128,6 +129,6 @@ Claude's config and GitHub OAuth are **not** affected.
 - **Transport:** Streamable HTTP (MCP 1.x) via FastMCP + uvicorn
 - **Auth:** GitHub OAuth 2.0 — server acts as Authorization Server, GitHub as Identity Provider
 - **User restriction:** GitHub username verified against `GITHUB_ALLOWED_USER` on every login
-- **Token lifetime:** 8 h access token, 30-day refresh token (rotated on each refresh)
+- **Token lifetime:** 30-day access token, 30-day refresh token (rotated on each refresh)
 - **Token persistence:** Redis-compatible store — tokens survive container restarts
 - **Garmin auth:** OAuth via `garminconnect` ≥ 0.3.2, widget+cffi strategy
