@@ -127,11 +127,12 @@ def authenticate(token_path: str, token_base64_path: str, force_reauth: bool = F
         garmin.login()
 
         # Save tokens to directory
-        garmin.garth.dump(token_path)
+        auth = getattr(garmin, 'garth', None) or getattr(garmin, 'client', None)
+        auth.dump(token_path)
         print(f"\n✓ OAuth tokens saved to: {os.path.expanduser(token_path)}")
 
         # Save tokens as base64
-        token_base64 = garmin.garth.dumps()
+        token_base64 = auth.dumps()
         expanded_base64_path = os.path.expanduser(token_base64_path)
         with open(expanded_base64_path, "w") as token_file:
             token_file.write(token_base64)

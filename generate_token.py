@@ -35,7 +35,8 @@ def main() -> None:
     )
     client.login()
 
-    token_json = client.garth.dumps()
+    auth = getattr(client, 'garth', None) or getattr(client, 'client', None)
+    token_json = auth.dumps()
     b64 = base64.b64encode(token_json.encode()).decode()
 
     output_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "token.txt")
