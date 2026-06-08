@@ -6,7 +6,7 @@ import sys
 
 import anyio
 import uvicorn
-from garminconnect import Garmin
+from garminconnect import Garmin, GarminConnectAuthenticationError
 from mcp.server.auth.settings import AuthSettings, ClientRegistrationOptions, RevocationOptions
 from mcp.server.fastmcp import FastMCP
 from pydantic import AnyHttpUrl
@@ -125,7 +125,15 @@ def init_api() -> Garmin:
         logger.info("Trying to login to Garmin Connect using token from environment...")
         token_json = base64.b64decode(b64).decode("utf-8")
         garmin = Garmin(is_cn=is_cn)
-        garmin.login(token_json)
+        try:
+            garmin.login(token_json)
+        except GarminConnectAuthenticationError as e:
+            logger.error(
+                "Garmin token is expired or invalid (%s). "
+                "Regenerate GARMINTOKENS_BASE64 using: garmin-mcp-auth",
+                e,
+            )
+            sys.exit(1)
         _log_token_expiry(garmin)
         logger.info("Login successful using GARMINTOKENS_BASE64.")
         return garmin
@@ -134,7 +142,15 @@ def init_api() -> Garmin:
     if os.path.isdir(local):
         logger.info("Using local token files from %s", local)
         garmin = Garmin(is_cn=is_cn)
-        garmin.login(local)
+        try:
+            garmin.login(local)
+        except GarminConnectAuthenticationError as e:
+            logger.error(
+                "Garmin token is expired or invalid (%s). "
+                "Regenerate tokens using: garmin-mcp-auth",
+                e,
+            )
+            sys.exit(1)
         _log_token_expiry(garmin)
         logger.info("Garmin Connect client initialized successfully.")
         return garmin
