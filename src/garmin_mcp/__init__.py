@@ -104,7 +104,7 @@ def _build_app() -> tuple[FastMCP, GitHubOAuthProvider]:
 
 def _log_token_expiry(garmin: Garmin) -> None:
     try:
-        token = garmin.client.oauth2_token
+        token = garmin.garth.oauth2_token
         expires_at = datetime.datetime.fromtimestamp(
             token.refresh_token_expires_at, tz=datetime.timezone.utc
         )
