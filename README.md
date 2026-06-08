@@ -72,11 +72,27 @@ Note the **Client ID** and generate a **Client Secret**.
 
 ### Step 3 — Garmin token
 
-Run `generate_token.py` locally to obtain your `GARMINTOKENS_BASE64`:
+Run `generate_token.py` locally to obtain your `GARMINTOKENS_BASE64`.
+
+> **Important:** You must run this from inside the project folder, and you must
+> use `uv run` — not `python3`. `uv run` uses the project's own virtual
+> environment, which installs the exact same `garminconnect` and `garth`
+> versions as Render. Using `python3` directly may use a different library
+> version on your machine, producing a token format Render can't read.
 
 ```bash
+cd /path/to/garmin-connect-mcp   # must be in this folder
 ~/.local/bin/uv run --python 3.12 python generate_token.py
 ```
+
+The script will prompt for your Garmin email, password, and MFA code. On
+success it writes the token to **`token.txt`** in the project folder — do not
+copy from the terminal (the long base64 string wraps and truncates).
+
+1. Open `token.txt` in a text editor
+2. Select all (`⌘A`) and copy
+3. Paste into `GARMINTOKENS_BASE64` on your hosting platform
+4. Delete `token.txt` — it contains your Garmin credentials
 
 ### Step 4 — Deploy
 
@@ -119,8 +135,15 @@ Garmin refresh token has EXPIRED — all API calls will fail. Regenerate GARMINT
 
 When the token needs renewal:
 
-1. Run `generate_token.py` locally
-2. Update `GARMINTOKENS_BASE64` in your hosting platform → redeploy
+```bash
+cd /path/to/garmin-connect-mcp   # must be in this folder
+~/.local/bin/uv run --python 3.12 python generate_token.py
+```
+
+1. Open the generated `token.txt`, select all, copy
+2. Update `GARMINTOKENS_BASE64` in your hosting platform
+3. Trigger a redeploy
+4. Delete `token.txt`
 
 Claude's config and GitHub OAuth are **not** affected.
 
