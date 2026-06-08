@@ -1,15 +1,13 @@
 """
 One-time token generation script — run this locally, never on Render.
 
-Uses the widget+cffi login strategy which bypasses Garmin's SSO rate limiting
-by taking a different auth path (no clientId parameter → different rate-limit bucket).
-
 Steps:
-1. ~/.local/bin/uv run --python 3.12 python generate_token.py
-2. Enter email, password and MFA code when prompted
-3. Copy the printed GARMINTOKENS_BASE64 value
-4. Paste it into Render → Environment Variables → GARMINTOKENS_BASE64
-5. Trigger a Manual Deploy in Render
+1. cd ~/Drives/Claude\ local/garmin-connect-mcp
+2. ~/.local/bin/uv run --python 3.12 python generate_token.py
+3. Enter email and password (MFA code prompted separately if needed)
+4. Copy the printed GARMINTOKENS_BASE64 value
+5. Paste it into Render → Environment Variables → GARMINTOKENS_BASE64
+6. Trigger a Manual Deploy in Render
 """
 
 import base64
@@ -19,17 +17,21 @@ from garminconnect import Garmin
 
 
 def main() -> None:
-    print("=== Garmin Token Generator (widget bypass) ===\n")
+    print("=== Garmin Token Generator ===\n")
     email = input("Garmin email: ")
     password = getpass.getpass(f"Password for {email}: ")
 
-    print("\nLogging in (auto-cascades through all strategies, reaches widget+cffi if rate-limited)...")
-    client = Garmin(
-        email=email,
-        password=password,
-        prompt_mfa=lambda: input("MFA code: "),
-    )
-    client.login()
+    print("\nLogging in...")
+    client = Garmin(email=email, password=password)
+
+    try:
+        client.login()
+    except Exception as e:
+        if any(kw in str(e).lower() for kw in ["mfa", "two", "factor", "verification", "code"]):
+            mfa_code = input("MFA/2FA code: ")
+            client.login(mfa_code)
+        else:
+            raise
 
     token_json = client.client.dumps()
     b64 = base64.b64encode(token_json.encode()).decode()
