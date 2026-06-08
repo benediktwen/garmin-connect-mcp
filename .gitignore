@@ -26,3 +26,4 @@ tests/fixtures/captured/*
 .garminconnect_base64
 garmin_tokens.json
 *.garminconnect*
+token.txt

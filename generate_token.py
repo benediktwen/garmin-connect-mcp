@@ -10,12 +10,13 @@ Requirements:
 Usage:
     python generate_token.py
 
-Then set the printed value as GARMINTOKENS_BASE64 in your environment and
-trigger a redeploy.
+The token is written to token.txt in the current directory — open that file
+and copy its contents into GARMINTOKENS_BASE64 on your hosting platform.
 """
 
 import base64
 import getpass
+import os
 
 from garminconnect import Garmin
 
@@ -40,13 +41,20 @@ def main() -> None:
     token_json = client.garth.dumps()
     b64 = base64.b64encode(token_json.encode()).decode()
 
-    print("\n" + "=" * 60)
-    print("Set this as GARMINTOKENS_BASE64 in your environment:")
-    print("=" * 60)
-    print(b64)
-    print("=" * 60)
+    # Write to file to avoid terminal line-wrapping issues when copying
+    output_file = os.path.join(os.path.dirname(__file__), "token.txt")
+    with open(output_file, "w") as f:
+        f.write(b64)
+
+    print(f"\n✓ Token saved to: {output_file}")
+    print("\nNext steps:")
+    print("  1. Open token.txt")
+    print("  2. Copy the entire contents (one long line)")
+    print("  3. Paste into GARMINTOKENS_BASE64 on Render → Environment")
+    print("  4. Trigger a Manual Deploy")
     print("\nTokens auto-refresh while the server runs regularly.")
     print("Re-run this script if the server has been offline for months.")
+    print("\n⚠️  Delete token.txt after pasting — it contains sensitive credentials.")
 
 
 if __name__ == "__main__":
