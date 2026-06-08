@@ -1,13 +1,17 @@
 """
-One-time token generation script — run this locally, never on Render.
+Garmin Connect token generator for cloud/server deployments.
 
-Steps:
-1. cd ~/Drives/Claude\ local/garmin-connect-mcp
-2. ~/.local/bin/uv run --python 3.12 python generate_token.py
-3. Enter email and password (MFA code prompted separately if needed)
-4. Copy the printed GARMINTOKENS_BASE64 value
-5. Paste it into Render → Environment Variables → GARMINTOKENS_BASE64
-6. Trigger a Manual Deploy in Render
+Generates a GARMINTOKENS_BASE64 value that can be set as an environment
+variable on any hosting platform (Render, Railway, Fly.io, etc.).
+
+Requirements:
+    pip install garmin-connect-mcp   # or: uv run python generate_token.py
+
+Usage:
+    python generate_token.py
+
+Then set the printed value as GARMINTOKENS_BASE64 in your environment and
+trigger a redeploy.
 """
 
 import base64
@@ -17,9 +21,9 @@ from garminconnect import Garmin
 
 
 def main() -> None:
-    print("=== Garmin Token Generator ===\n")
+    print("=== Garmin Connect Token Generator ===\n")
     email = input("Garmin email: ")
-    password = getpass.getpass(f"Password for {email}: ")
+    password = getpass.getpass("Password: ")
 
     print("\nLogging in...")
     client = Garmin(email=email, password=password)
@@ -28,21 +32,21 @@ def main() -> None:
         client.login()
     except Exception as e:
         if any(kw in str(e).lower() for kw in ["mfa", "two", "factor", "verification", "code"]):
-            mfa_code = input("MFA/2FA code: ")
+            mfa_code = input("MFA / 2FA code: ")
             client.login(mfa_code)
         else:
             raise
 
-    token_json = client.client.dumps()
+    token_json = client.garth.dumps()
     b64 = base64.b64encode(token_json.encode()).decode()
 
     print("\n" + "=" * 60)
-    print("GARMINTOKENS_BASE64 (copy this to Render):")
+    print("Set this as GARMINTOKENS_BASE64 in your environment:")
     print("=" * 60)
     print(b64)
     print("=" * 60)
-    print("\nTokens auto-refresh as long as the server runs regularly.")
-    print("If the server was offline for months, re-run this script.")
+    print("\nTokens auto-refresh while the server runs regularly.")
+    print("Re-run this script if the server has been offline for months.")
 
 
 if __name__ == "__main__":
