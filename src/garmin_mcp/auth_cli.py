@@ -123,14 +123,8 @@ def authenticate(token_path: str, token_base64_path: str, force_reauth: bool = F
     print(f"Email: {email}")
 
     try:
-        garmin = Garmin(email=email, password=password, is_cn=is_cn)
-        try:
-            garmin.login()
-        except Exception as e:
-            if any(kw in str(e).lower() for kw in ["mfa", "two", "factor", "verification", "code"]):
-                garmin.login(get_mfa())
-            else:
-                raise
+        garmin = Garmin(email=email, password=password, is_cn=is_cn, prompt_mfa=get_mfa)
+        garmin.login()
 
         # Save tokens to directory
         garmin.garth.dump(token_path)
