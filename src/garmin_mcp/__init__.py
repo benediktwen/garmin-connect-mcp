@@ -119,8 +119,8 @@ def _log_token_expiry(garmin: Garmin) -> None:
             logger.warning("Garmin refresh token expires in %d day(s) on %s — regenerate GARMINTOKENS_BASE64 soon.", days_left, expires_at.date())
         else:
             logger.info("Garmin refresh token valid until %s (%d days).", expires_at.date(), days_left)
-    except Exception as e:
-        logger.warning("Could not read token expiry: %s", e)
+    except Exception:
+        pass
 
 
 def init_api() -> Garmin:
