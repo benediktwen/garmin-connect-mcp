@@ -2,7 +2,7 @@
 
 Remote MCP server for Garmin Connect. Gives AI assistants access to your Garmin health and activity data over the internet — no local server or app required.
 
-Built on top of [Taxuspt/garmin_mcp](https://github.com/Taxuspt/garmin_mcp) (MIT).
+Built on top of [Taxuspt/garmin_mcp](https://github.com/Taxuspt/garmin_mcp) and [cyberjunky/python-garminconnect](https://github.com/cyberjunky/python-garminconnect).
 
 ## What makes this different from Taxuspt/garmin_mcp
 
@@ -150,6 +150,10 @@ Your AI assistant's configuration and GitHub OAuth are **not** affected.
 - **Token lifetime:** 30-day access token, 30-day refresh token (rotated on each refresh)
 - **Token persistence:** Redis-compatible store — tokens survive container restarts
 - **Garmin auth:** OAuth via `garminconnect` ≥ 0.3.2, widget+cffi strategy
+
+## Contributing
+
+This code was built with AI assistance ([Claude Code](https://claude.ai/code)) — vibe-coded with the best intentions. Security has been a priority throughout, but the code has not been independently audited. Use it at your own risk. If you spot a bug, a vulnerability, or an opportunity to improve anything, issues and pull requests are very welcome.
 
 ## Credits
 
