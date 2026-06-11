@@ -155,3 +155,9 @@ Claude's config and GitHub OAuth are **not** affected.
 - **Token lifetime:** 30-day access token, 30-day refresh token (rotated on each refresh)
 - **Token persistence:** Redis-compatible store — tokens survive container restarts
 - **Garmin auth:** OAuth via `garminconnect` ≥ 0.3.2, widget+cffi strategy
+
+## Credits
+
+- [Taxuspt/garmin_mcp](https://github.com/Taxuspt/garmin_mcp) — original local MCP server this remote version was adapted from (MIT)
+- [cyberjunky/python-garminconnect](https://github.com/cyberjunky/python-garminconnect) — Python library powering Garmin Connect API access
+- Built with [Claude Code](https://claude.ai/code)
