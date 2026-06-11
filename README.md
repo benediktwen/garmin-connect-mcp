@@ -1,21 +1,16 @@
 # Garmin Connect MCP
 
-Remote MCP server for Garmin Connect data. Connects Claude to your Garmin account
-over the internet — no local server required.
+Remote MCP server for Garmin Connect. Gives AI assistants access to your Garmin health and activity data over the internet — no local server or app required.
 
-Built on top of [Taxuspt/garmin_mcp](https://github.com/Taxuspt/garmin_mcp) (MIT)
-and [cyberjunky/python-garminconnect](https://github.com/cyberjunky/python-garminconnect).
+Built on top of [Taxuspt/garmin_mcp](https://github.com/Taxuspt/garmin_mcp) (MIT).
 
-## What makes this different from taxuspt/garmin_mcp
+## What makes this different from Taxuspt/garmin_mcp
 
-taxuspt's server runs locally on your machine and is accessed by a local Claude
-Desktop client. This version is deployed as a remote HTTPS service, protected by
-GitHub OAuth, so it works from Claude.ai web, Claude mobile, and any MCP-compatible
-client — without running anything locally.
+Taxuspt's original server runs locally on your machine and requires a locally installed AI desktop client. This version runs as a cloud service, protected by GitHub OAuth, so it works from any MCP-compatible AI assistant on any device — without running anything locally.
 
 ## What it does
 
-Exposes 96+ Garmin Connect tools via MCP so Claude can query health data directly:
+Exposes 96+ Garmin Connect tools so AI assistants can query your health data directly:
 
 - Health & Wellness: sleep, HRV, stress, body battery, heart rate, SpO2, respiration
 - Activities: runs, rides, swims — with splits, weather, HR zones
@@ -26,23 +21,23 @@ Exposes 96+ Garmin Connect tools via MCP so Claude can query health data directl
 ## How it works
 
 ```
-Claude → /authorize → GitHub login (+ 2FA) → /auth/callback
-       → username verified → MCP access token issued → MCP connection
+AI assistant → /authorize → GitHub login (+ 2FA) → /auth/callback
+             → username verified → MCP access token issued → MCP connection
 ```
 
 Access is protected by **GitHub OAuth** — only the GitHub account set in
 `GITHUB_ALLOWED_USER` can authenticate. GitHub login with 2FA is required
-once every 30 days (tokens are persisted to Redis). No shared secrets are
-stored in Claude's config.
+once every 30 days; tokens are persisted to Redis. No credentials are stored
+in the AI assistant's configuration.
 
-1. Claude detects the MCP server requires OAuth
-2. Browser opens — user logs in to GitHub with 2FA
-3. Server verifies the GitHub username matches `GITHUB_ALLOWED_USER`
-4. Claude receives a 30-day access token with a 30-day refresh token
+1. The AI assistant detects the MCP server requires OAuth
+2. A browser window opens — you log in to GitHub with 2FA
+3. The server verifies your GitHub username matches `GITHUB_ALLOWED_USER`
+4. The AI assistant receives a 30-day access token and a 30-day refresh token
 
 > **Cold start note:** If the hosting platform sleeps the container, the first
 > request after wake-up takes a few seconds. OAuth tokens are persisted to
-> a Redis-compatible store so Claude does **not** need to re-authenticate.
+> a Redis-compatible store so the AI assistant does **not** need to re-authenticate.
 > The `_pending` OAuth state is in-memory only — if a cold start happens
 > mid-login flow, just click Connect again.
 
@@ -69,16 +64,15 @@ Create a GitHub OAuth App at **Settings → Developer settings → OAuth Apps**:
 
 Note the **Client ID** and generate a **Client Secret**.
 
-
 ### Step 3 — Garmin token
 
 Run `generate_token.py` locally to obtain your `GARMINTOKENS_BASE64`.
 
 > **Important:** You must run this from inside the project folder, and you must
 > use `uv run` — not `python3`. `uv run` uses the project's own virtual
-> environment, which installs the exact same `garminconnect` and `garth`
-> versions as Render. Using `python3` directly may use a different library
-> version on your machine, producing a token format Render can't read.
+> environment, which installs the exact same library versions as your deployment.
+> Using `python3` directly may use a different version on your machine, producing
+> a token format the server can't read.
 
 ```bash
 cd /path/to/garmin-connect-mcp   # must be in this folder
@@ -101,13 +95,14 @@ copy from the terminal (the long base64 string wraps and truncates).
 3. Set the environment variables listed below
 4. Trigger a deploy
 
-### Step 5 — Configure Claude
+### Step 5 — Connect to your AI assistant
 
-In Claude.ai web (connector dialog):
+In your MCP-compatible AI assistant, add this server as a remote MCP connection:
+
 - **URL:** `https://your-service-url/mcp`
-- OAuth fields: leave empty — the server advertises its own OAuth metadata
+- Authentication: leave empty — the server handles OAuth automatically
 
-Claude Desktop and mobile sync automatically from the web connector.
+**For Claude:** paste the URL into the connector dialog at [claude.ai](https://claude.ai). Claude Desktop and mobile sync automatically from the web connector.
 
 ## Configuration reference
 
@@ -141,11 +136,11 @@ cd /path/to/garmin-connect-mcp   # must be in this folder
 ```
 
 1. Open the generated `token.txt`, select all, copy
-2. Update `GARMINTOKENS_BASE64` in your hosting platform
+2. Update `GARMINTOKENS_BASE64` on your hosting platform
 3. Trigger a redeploy
 4. Delete `token.txt`
 
-Claude's config and GitHub OAuth are **not** affected.
+Your AI assistant's configuration and GitHub OAuth are **not** affected.
 
 ## Architecture
 
