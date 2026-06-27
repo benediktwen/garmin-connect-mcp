@@ -190,7 +190,9 @@ def register_tools(app):
         """Get training readiness data with curated metrics
 
         Returns training readiness score and contributing factors.
-        Falls back to the previous day's data if today's data is not yet synced.
+        Because Garmin calculates readiness from overnight sleep data and stores it
+        under the sleep date, this tool automatically searches up to 3 days back
+        to return the most recent available readiness score.
 
         Args:
             date: Date in YYYY-MM-DD format
@@ -200,17 +202,22 @@ def register_tools(app):
 
             fallback_date = None
             if not readiness_data:
-                prev_date = (
-                    datetime.datetime.strptime(date, "%Y-%m-%d")
-                    - datetime.timedelta(days=1)
-                ).strftime("%Y-%m-%d")
-                readiness_data = garmin_client.get_training_readiness(prev_date)
+                # Training readiness is calculated from overnight sleep, so Garmin
+                # stores it under the previous calendar date. Try up to 3 days back.
+                for days_back in range(1, 4):
+                    prev_date = (
+                        datetime.datetime.strptime(date, "%Y-%m-%d")
+                        - datetime.timedelta(days=days_back)
+                    ).strftime("%Y-%m-%d")
+                    readiness_data = garmin_client.get_training_readiness(prev_date)
+                    if readiness_data:
+                        fallback_date = prev_date
+                        break
                 if not readiness_data:
                     return (
-                        f"No training readiness data found for {date}. "
-                        "The data may not yet be synced from your Garmin device."
+                        f"No training readiness data found for {date} or the preceding 3 days. "
+                        "Please make sure your Garmin device has been synced recently."
                     )
-                fallback_date = prev_date
 
             # Normalize: API may return a list or a single dict
             if isinstance(readiness_data, dict):
@@ -263,8 +270,8 @@ def register_tools(app):
             result: dict = {"data": curated}
             if fallback_date:
                 result["note"] = (
-                    f"Training readiness for {date} not yet synced. "
-                    f"Showing data from {fallback_date}."
+                    f"Garmin stores training readiness under the sleep date. "
+                    f"Showing most recent available data from {fallback_date}."
                 )
             return json.dumps(result, indent=2)
         except Exception as e:
@@ -896,7 +903,9 @@ def register_tools(app):
 
         Returns the morning training readiness assessment, which evaluates
         recovery status and readiness to train based on overnight metrics.
-        Falls back to the previous day's data if today's data is not yet synced.
+        Because Garmin calculates readiness from overnight sleep data and stores it
+        under the sleep date, this tool automatically searches up to 3 days back
+        to return the most recent available readiness score.
 
         Args:
             date: Date in YYYY-MM-DD format
@@ -906,17 +915,22 @@ def register_tools(app):
 
             fallback_date = None
             if not readiness:
-                prev_date = (
-                    datetime.datetime.strptime(date, "%Y-%m-%d")
-                    - datetime.timedelta(days=1)
-                ).strftime("%Y-%m-%d")
-                readiness = garmin_client.get_morning_training_readiness(prev_date)
+                # Training readiness is calculated from overnight sleep, so Garmin
+                # stores it under the previous calendar date. Try up to 3 days back.
+                for days_back in range(1, 4):
+                    prev_date = (
+                        datetime.datetime.strptime(date, "%Y-%m-%d")
+                        - datetime.timedelta(days=days_back)
+                    ).strftime("%Y-%m-%d")
+                    readiness = garmin_client.get_morning_training_readiness(prev_date)
+                    if readiness:
+                        fallback_date = prev_date
+                        break
                 if not readiness:
                     return (
-                        f"No morning training readiness data found for {date}. "
-                        "The data may not yet be synced from your Garmin device."
+                        f"No morning training readiness data found for {date} or the preceding 3 days. "
+                        "Please make sure your Garmin device has been synced recently."
                     )
-                fallback_date = prev_date
 
             # Curate the morning training readiness data
             curated: dict = {
@@ -942,8 +956,8 @@ def register_tools(app):
 
             if fallback_date:
                 curated["note"] = (
-                    f"Morning training readiness for {date} not yet synced. "
-                    f"Showing data from {fallback_date}."
+                    f"Garmin stores training readiness under the sleep date. "
+                    f"Showing most recent available data from {fallback_date}."
                 )
 
             return json.dumps(curated, indent=2)
