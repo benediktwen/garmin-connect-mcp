@@ -190,18 +190,39 @@ def register_tools(app):
         """Get training readiness data with curated metrics
 
         Returns training readiness score and contributing factors.
+        Falls back to the previous day's data if today's data is not yet synced.
 
         Args:
             date: Date in YYYY-MM-DD format
         """
         try:
-            readiness_list = garmin_client.get_training_readiness(date)
-            if not readiness_list:
-                return f"No training readiness data found for {date}"
+            readiness_data = garmin_client.get_training_readiness(date)
+
+            fallback_date = None
+            if not readiness_data:
+                prev_date = (
+                    datetime.datetime.strptime(date, "%Y-%m-%d")
+                    - datetime.timedelta(days=1)
+                ).strftime("%Y-%m-%d")
+                readiness_data = garmin_client.get_training_readiness(prev_date)
+                if not readiness_data:
+                    return (
+                        f"No training readiness data found for {date}. "
+                        "The data may not yet be synced from your Garmin device."
+                    )
+                fallback_date = prev_date
+
+            # Normalize: API may return a list or a single dict
+            if isinstance(readiness_data, dict):
+                readiness_list = [readiness_data]
+            else:
+                readiness_list = readiness_data
 
             # Curate each readiness entry (usually 1-2 per day)
             curated = []
             for r in readiness_list:
+                if not isinstance(r, dict):
+                    continue
                 entry = {
                     "date": r.get('calendarDate'),
                     "timestamp": r.get('timestampLocal'),
@@ -239,7 +260,13 @@ def register_tools(app):
                 entry = {k: v for k, v in entry.items() if v is not None}
                 curated.append(entry)
 
-            return json.dumps(curated, indent=2)
+            result: dict = {"data": curated}
+            if fallback_date:
+                result["note"] = (
+                    f"Training readiness for {date} not yet synced. "
+                    f"Showing data from {fallback_date}."
+                )
+            return json.dumps(result, indent=2)
         except Exception as e:
             return f"Error retrieving training readiness data: {str(e)}"
 
@@ -869,18 +896,31 @@ def register_tools(app):
 
         Returns the morning training readiness assessment, which evaluates
         recovery status and readiness to train based on overnight metrics.
+        Falls back to the previous day's data if today's data is not yet synced.
 
         Args:
             date: Date in YYYY-MM-DD format
         """
         try:
             readiness = garmin_client.get_morning_training_readiness(date)
+
+            fallback_date = None
             if not readiness:
-                return f"No morning training readiness data found for {date}"
+                prev_date = (
+                    datetime.datetime.strptime(date, "%Y-%m-%d")
+                    - datetime.timedelta(days=1)
+                ).strftime("%Y-%m-%d")
+                readiness = garmin_client.get_morning_training_readiness(prev_date)
+                if not readiness:
+                    return (
+                        f"No morning training readiness data found for {date}. "
+                        "The data may not yet be synced from your Garmin device."
+                    )
+                fallback_date = prev_date
 
             # Curate the morning training readiness data
-            curated = {
-                "date": date,
+            curated: dict = {
+                "date": fallback_date or date,
                 "readiness_score": readiness.get('readinessScore'),
                 "readiness_level": readiness.get('readinessLevel'),
                 "recovery_time_hours": readiness.get('recoveryTime'),
@@ -899,6 +939,12 @@ def register_tools(app):
 
             # Remove None values
             curated = {k: v for k, v in curated.items() if v is not None}
+
+            if fallback_date:
+                curated["note"] = (
+                    f"Morning training readiness for {date} not yet synced. "
+                    f"Showing data from {fallback_date}."
+                )
 
             return json.dumps(curated, indent=2)
         except Exception as e:
