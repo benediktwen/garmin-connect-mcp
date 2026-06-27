@@ -15,6 +15,7 @@ from tests.fixtures.garmin_responses import (
     MOCK_STEPS_DATA,
     MOCK_DAILY_STEPS,
     MOCK_TRAINING_READINESS,
+    MOCK_MORNING_TRAINING_READINESS,
     MOCK_BODY_BATTERY,
     MOCK_BODY_BATTERY_EVENTS,
     MOCK_BLOOD_PRESSURE,
@@ -162,18 +163,105 @@ async def test_get_daily_steps_tool(app_with_health_wellness, mock_garmin_client
 @pytest.mark.asyncio
 async def test_get_training_readiness_tool(app_with_health_wellness, mock_garmin_client):
     """Test get_training_readiness tool returns readiness data"""
-    # Setup mock
+    import json
     mock_garmin_client.get_training_readiness.return_value = MOCK_TRAINING_READINESS
 
-    # Call tool
     result = await app_with_health_wellness.call_tool(
         "get_training_readiness",
         {"date": "2024-01-15"}
     )
 
-    # Verify
     assert result is not None
     mock_garmin_client.get_training_readiness.assert_called_once_with("2024-01-15")
+    text = result[0][0].text
+    parsed = json.loads(text)
+    assert "data" in parsed
+    assert parsed["data"][0]["score"] == 75
+    assert parsed["data"][0]["level"] == "GOOD"
+    assert "note" not in parsed  # No fallback note when data is present
+
+
+@pytest.mark.asyncio
+async def test_get_training_readiness_fallback_to_previous_day(app_with_health_wellness, mock_garmin_client):
+    """Test get_training_readiness falls back to previous day when today has no data"""
+    import json
+    from unittest.mock import call
+
+    # Today returns empty, yesterday returns data
+    mock_garmin_client.get_training_readiness.side_effect = [[], MOCK_TRAINING_READINESS]
+
+    result = await app_with_health_wellness.call_tool(
+        "get_training_readiness",
+        {"date": "2024-01-15"}
+    )
+
+    assert result is not None
+    mock_garmin_client.get_training_readiness.assert_has_calls([
+        call("2024-01-15"),
+        call("2024-01-14"),
+    ])
+    parsed = json.loads(result[0][0].text)
+    assert "note" in parsed
+    assert "2024-01-14" in parsed["note"]
+
+
+@pytest.mark.asyncio
+async def test_get_training_readiness_dict_response(app_with_health_wellness, mock_garmin_client):
+    """Test get_training_readiness handles a dict response (single entry) correctly"""
+    import json
+    mock_garmin_client.get_training_readiness.return_value = MOCK_TRAINING_READINESS[0]
+
+    result = await app_with_health_wellness.call_tool(
+        "get_training_readiness",
+        {"date": "2024-01-15"}
+    )
+
+    assert result is not None
+    parsed = json.loads(result[0][0].text)
+    assert "data" in parsed
+    assert parsed["data"][0]["score"] == 75
+
+
+@pytest.mark.asyncio
+async def test_get_morning_training_readiness_tool(app_with_health_wellness, mock_garmin_client):
+    """Test get_morning_training_readiness tool returns readiness data"""
+    import json
+    mock_garmin_client.get_morning_training_readiness.return_value = MOCK_MORNING_TRAINING_READINESS
+
+    result = await app_with_health_wellness.call_tool(
+        "get_morning_training_readiness",
+        {"date": "2024-01-15"}
+    )
+
+    assert result is not None
+    mock_garmin_client.get_morning_training_readiness.assert_called_once_with("2024-01-15")
+    parsed = json.loads(result[0][0].text)
+    assert parsed["readiness_score"] == 75
+    assert parsed["readiness_level"] == "GOOD"
+    assert "note" not in parsed
+
+
+@pytest.mark.asyncio
+async def test_get_morning_training_readiness_fallback_to_previous_day(app_with_health_wellness, mock_garmin_client):
+    """Test get_morning_training_readiness falls back to previous day when today has no data"""
+    import json
+    from unittest.mock import call
+
+    mock_garmin_client.get_morning_training_readiness.side_effect = [{}, MOCK_MORNING_TRAINING_READINESS]
+
+    result = await app_with_health_wellness.call_tool(
+        "get_morning_training_readiness",
+        {"date": "2024-01-15"}
+    )
+
+    assert result is not None
+    mock_garmin_client.get_morning_training_readiness.assert_has_calls([
+        call("2024-01-15"),
+        call("2024-01-14"),
+    ])
+    parsed = json.loads(result[0][0].text)
+    assert "note" in parsed
+    assert "2024-01-14" in parsed["note"]
 
 
 @pytest.mark.asyncio
