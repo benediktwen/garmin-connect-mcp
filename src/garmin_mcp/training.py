@@ -57,14 +57,7 @@ def _map_contributor(
         )
         result["activity_type_id"] = activity_type_id
     elif group is not None:
-        # Group categories when activityTypeId is None
-        # TODO: Find a proper mapping for these groups
-        group_names = {
-            0: "running (?)",
-            1: "biking (?)",
-            8: "Other Activities",
-        }
-        result["group"] = group_names.get(group, f"group_{group}")
+        result["group"] = f"group_{group}"
 
     return result
 
