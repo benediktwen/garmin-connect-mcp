@@ -9,7 +9,7 @@ description = "MCP server to access Garmin data"
 requires-python = ">=3.10"
 dependencies = [
     "python-dotenv==1.0.1",
-    "garminconnect==0.3.6",
+    "garminconnect>=0.3.2",
     "curl_cffi>=0.7.0",
     "requests==2.32.4",
     "mcp>=1.23.0",
