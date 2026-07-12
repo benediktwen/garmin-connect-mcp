@@ -198,7 +198,7 @@ def register_tools(app):
                 "nutritionContents": [nutrition],
             }
             url = "/nutrition-service/customFood"
-            result = garmin_client.connectapi(url, method="PUT", json=payload)
+            result = garmin_client.client.put("connectapi", url, json=payload, api=True)
             if result is None:
                 return "Custom food created (no response data returned)."
             return json.dumps(result, indent=2)
@@ -279,7 +279,7 @@ def register_tools(app):
                 "nutritionContents": [nutrition],
             }
             url = "/nutrition-service/customFood"
-            result = garmin_client.connectapi(url, method="PUT", json=payload)
+            result = garmin_client.client.put("connectapi", url, json=payload, api=True)
             if result is None:
                 return "Custom food updated (no response data returned)."
             return json.dumps(result, indent=2)
@@ -335,7 +335,7 @@ def register_tools(app):
                 ],
             }
             url = "/nutrition-service/food/logs"
-            result = garmin_client.connectapi(url, method="PUT", json=payload)
+            result = garmin_client.client.put("connectapi", url, json=payload, api=True)
             if result is None:
                 return "Food logged successfully."
             return json.dumps(result, indent=2)

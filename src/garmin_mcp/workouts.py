@@ -400,8 +400,7 @@ def register_tools(app):
             workout_id: ID of the workout to delete (get IDs from get_workouts)
         """
         try:
-            url = f"{garmin_client.garmin_workouts}/workout/{workout_id}"
-            garmin_client.connectapi(url, method="DELETE")
+            garmin_client.delete_workout(workout_id)
             return json.dumps({
                 "status": "success",
                 "workout_id": workout_id,
@@ -519,8 +518,7 @@ def register_tools(app):
             calendar_date: Date to schedule the workout in YYYY-MM-DD format
         """
         try:
-            url = f"workout-service/schedule/{workout_id}"
-            garmin_client.connectapi(url, method="POST", json={"date": calendar_date})
+            garmin_client.schedule_workout(workout_id, calendar_date)
             return json.dumps({
                 "status": "success",
                 "workout_id": workout_id,
