@@ -27,7 +27,7 @@ AI assistant → /authorize → GitHub login (+ 2FA) → /auth/callback
 
 Access is protected by **GitHub OAuth** — only the GitHub account set in
 `GITHUB_ALLOWED_USER_ID` can authenticate. GitHub login with 2FA is required
-once every 30 days; tokens are persisted to Redis. No credentials are stored
+once every 30 days; tokens are persisted to a token store (file or Redis). No credentials are stored
 in the AI assistant's configuration.
 
 1. The AI assistant detects the MCP server requires OAuth
@@ -35,7 +35,7 @@ in the AI assistant's configuration.
 3. The server verifies your GitHub account matches `GITHUB_ALLOWED_USER_ID`
 4. The AI assistant receives a 30-day access token and a 30-day refresh token
 
-> **Restart note:** OAuth tokens are persisted to a Redis-compatible store, so
+> **Restart note:** OAuth tokens are persisted to the token store, so
 > the AI assistant does **not** need to re-authenticate after a container
 > restart. The `_pending` OAuth state is in-memory only — if the container
 > restarts mid-login flow, just click Connect again.
@@ -45,13 +45,20 @@ in the AI assistant's configuration.
 You will need:
 
 - A Docker host reachable over HTTPS (any VPS or container platform)
-- A Redis-compatible key-value store for token persistence (e.g. Upstash, Redis Cloud)
+- Persistent storage for OAuth tokens: a mounted volume (recommended on your own
+  server) or, on platforms without persistent disks, an Upstash Redis database
 - A GitHub OAuth App for authentication
 
-### Step 1 — Redis store
+### Step 1 — Token store
 
-Create a Redis database on your preferred provider. Note the **REST URL** and
-**auth token** (or connection string, depending on provider).
+On a server with persistent storage, set `TOKEN_STORE_FILE` to a path inside a
+mounted volume (e.g. `/state/token_store.json`). The file is written atomically
+with owner-only permissions — keep the volume outside any git checkout, it
+contains live access tokens.
+
+On platforms without persistent disks, create an Upstash Redis database instead
+and note its **REST URL** and **REST token**. Free databases may be deleted after
+a period of inactivity — prefer the file store when you can.
 
 ### Step 2 — GitHub OAuth App (one-time)
 
@@ -104,7 +111,9 @@ Delete `token.txt` afterwards — it contains your Garmin session.
    ```bash
    docker build -t garmin-connect-mcp .
    docker run -d --env-file .env -p 8000:8000 \
-     -v "$PWD/garmin-tokens:/root/.garminconnect" garmin-connect-mcp
+     -v "$PWD/garmin-tokens:/root/.garminconnect" \
+     -v "$PWD/state:/state" -e TOKEN_STORE_FILE=/state/token_store.json \
+     garmin-connect-mcp
    ```
 3. Put it behind an HTTPS reverse proxy and set `SERVER_URL` to the public URL
 4. Set the environment variables listed below (in `.env` — never commit it)
@@ -128,11 +137,15 @@ In your MCP-compatible AI assistant, add this server as a remote MCP connection:
 | `GITHUB_ALLOWED_USER_ID` | ✅ | Never | Immutable numeric GitHub user ID allowed to connect (preferred) |
 | `GITHUB_ALLOWED_USER` | — | Never | GitHub username — legacy fallback, used only if `GITHUB_ALLOWED_USER_ID` is unset |
 | `SERVER_URL` | ✅ | Never | Public base URL of this service |
-| `UPSTASH_REDIS_REST_URL` | ✅ | Never | Redis REST endpoint |
-| `UPSTASH_REDIS_REST_TOKEN` | ✅ | Never | Redis auth token |
+| `TOKEN_STORE_FILE` | ✅* | Never | Path of the OAuth token store file (in a mounted volume); takes precedence over Redis |
+| `UPSTASH_REDIS_REST_URL` | ✅* | Never | Upstash Redis REST endpoint (alternative to `TOKEN_STORE_FILE`) |
+| `UPSTASH_REDIS_REST_TOKEN` | ✅* | Never | Upstash Redis REST token |
 | `TOKEN_STORE_KEY` | — | Never | Redis key for the OAuth token store (default `mcp:garmin:token_store`) |
 | `PORT` | — | Never | Listen port inside the container (default `8000`) |
 | `GARMIN_IS_CN` | — | — | Set `true` for Garmin Connect China |
+
+\* Set either `TOKEN_STORE_FILE` or both Upstash variables. Without either, tokens
+are kept in memory only and every restart requires reconnecting the AI assistant.
 
 ## Garmin token renewal (~every 90 days)
 
@@ -166,7 +179,7 @@ Your AI assistant's configuration and GitHub OAuth are **not** affected.
 - **Auth:** GitHub OAuth 2.0 — server acts as Authorization Server, GitHub as Identity Provider
 - **User restriction:** GitHub user ID verified against `GITHUB_ALLOWED_USER_ID` on every login (immutable; `GITHUB_ALLOWED_USER` is a legacy username fallback)
 - **Token lifetime:** 30-day access token, 30-day refresh token (rotated on each refresh)
-- **Token persistence:** Redis-compatible store — tokens survive container restarts
+- **Token persistence:** `TOKEN_STORE_FILE` (atomic, 0600) or Upstash Redis — tokens survive container restarts
 - **Garmin auth:** OAuth via `garminconnect` (pinned in `pyproject.toml` — the
   token format can change between releases, so upgrade deliberately and generate
   tokens with the same version)
