@@ -26,7 +26,7 @@ AI assistant → /authorize → GitHub login (+ 2FA) → /auth/callback
 ```
 
 Access is protected by **GitHub OAuth** — only the GitHub account set in
-`GITHUB_ALLOWED_USER` can authenticate. GitHub login with 2FA is required
+`GITHUB_ALLOWED_USER_ID` can authenticate. GitHub login with 2FA is required
 once every 30 days; tokens are persisted to Redis. No credentials are stored
 in the AI assistant's configuration.
 
@@ -35,17 +35,16 @@ in the AI assistant's configuration.
 3. The server verifies your GitHub account matches `GITHUB_ALLOWED_USER_ID`
 4. The AI assistant receives a 30-day access token and a 30-day refresh token
 
-> **Cold start note:** If the hosting platform sleeps the container, the first
-> request after wake-up takes a few seconds. OAuth tokens are persisted to
-> a Redis-compatible store so the AI assistant does **not** need to re-authenticate.
-> The `_pending` OAuth state is in-memory only — if a cold start happens
-> mid-login flow, just click Connect again.
+> **Restart note:** OAuth tokens are persisted to a Redis-compatible store, so
+> the AI assistant does **not** need to re-authenticate after a container
+> restart. The `_pending` OAuth state is in-memory only — if the container
+> restarts mid-login flow, just click Connect again.
 
 ## Deploy your own
 
 You will need:
 
-- A container hosting platform (e.g. Render, Railway, Fly.io)
+- A Docker host reachable over HTTPS (any VPS or container platform)
 - A Redis-compatible key-value store for token persistence (e.g. Upstash, Redis Cloud)
 - A GitHub OAuth App for authentication
 
@@ -66,7 +65,7 @@ Note the **Client ID** and generate a **Client Secret**.
 
 ### Step 3 — Garmin token
 
-Run `generate_token.py` locally to obtain your `GARMINTOKENS_BASE64`.
+Run `generate_token.py` locally to obtain your Garmin token.
 
 > **Important:** You must run this from inside the project folder, and you must
 > use `uv run` — not `python3`. `uv run` uses the project's own virtual
@@ -80,20 +79,35 @@ cd /path/to/garmin-connect-mcp   # must be in this folder
 ```
 
 The script will prompt for your Garmin email, password, and MFA code. On
-success it writes the token to **`token.txt`** in the project folder — do not
-copy from the terminal (the long base64 string wraps and truncates).
+success it writes the base64-encoded token to **`token.txt`** in the project
+folder — do not copy from the terminal (the long base64 string wraps and truncates).
 
-1. Open `token.txt` in a text editor
-2. Select all (`⌘A`) and copy
-3. Paste into `GARMINTOKENS_BASE64` on your hosting platform
-4. Delete `token.txt` — it contains your Garmin credentials
+Then provide the token to the server in one of two ways:
+
+- **Token directory (recommended):** decode it into a file named
+  `garmin_tokens.json` and mount its directory into the container at
+  `/root/.garminconnect`. `garminconnect` writes refreshed tokens back to this
+  file, so the session survives restarts.
+  ```bash
+  mkdir -p ./garmin-tokens && base64 -d < token.txt > ./garmin-tokens/garmin_tokens.json
+  ```
+- **Environment variable:** paste the contents of `token.txt` into
+  `GARMINTOKENS_BASE64`. Simpler, but refreshed tokens are not persisted —
+  after a restart the server falls back to the original token.
+
+Delete `token.txt` afterwards — it contains your Garmin session.
 
 ### Step 4 — Deploy
 
 1. Fork this repo
-2. Deploy to your container hosting platform (a `render.yaml` is included for Render)
-3. Set the environment variables listed below
-4. Trigger a deploy
+2. Build and run the Docker image, e.g.
+   ```bash
+   docker build -t garmin-connect-mcp .
+   docker run -d --env-file .env -p 8000:8000 \
+     -v "$PWD/garmin-tokens:/root/.garminconnect" garmin-connect-mcp
+   ```
+3. Put it behind an HTTPS reverse proxy and set `SERVER_URL` to the public URL
+4. Set the environment variables listed below (in `.env` — never commit it)
 
 ### Step 5 — Connect to your AI assistant
 
@@ -108,7 +122,7 @@ In your MCP-compatible AI assistant, add this server as a remote MCP connection:
 
 | Env var | Required | Rotates | Description |
 |---|---|---|---|
-| `GARMINTOKENS_BASE64` | ✅ | ~90 days | Garmin OAuth session token (from `generate_token.py`) |
+| `GARMINTOKENS_BASE64` | — | ~90 days | Garmin session token (from `generate_token.py`); not needed when a token directory is mounted |
 | `GITHUB_CLIENT_ID` | ✅ | Never | GitHub OAuth App client ID |
 | `GITHUB_CLIENT_SECRET` | ✅ | Never | GitHub OAuth App client secret |
 | `GITHUB_ALLOWED_USER_ID` | ✅ | Never | Immutable numeric GitHub user ID allowed to connect (preferred) |
@@ -116,12 +130,14 @@ In your MCP-compatible AI assistant, add this server as a remote MCP connection:
 | `SERVER_URL` | ✅ | Never | Public base URL of this service |
 | `UPSTASH_REDIS_REST_URL` | ✅ | Never | Redis REST endpoint |
 | `UPSTASH_REDIS_REST_TOKEN` | ✅ | Never | Redis auth token |
+| `TOKEN_STORE_KEY` | — | Never | Redis key for the OAuth token store (default `mcp:garmin:token_store`) |
+| `PORT` | — | Never | Listen port inside the container (default `8000`) |
 | `GARMIN_IS_CN` | — | — | Set `true` for Garmin Connect China |
 
 ## Garmin token renewal (~every 90 days)
 
-The server logs the exact token expiry date at every startup. Check your hosting
-platform's logs for lines like:
+The server logs the exact token expiry date at every startup. Check the
+container logs (`docker logs <container>`) for lines like:
 
 ```
 Garmin refresh token valid until 2026-08-15 (84 days).
@@ -136,10 +152,11 @@ cd /path/to/garmin-connect-mcp   # must be in this folder
 ~/.local/bin/uv run --python 3.12 python generate_token.py
 ```
 
-1. Open the generated `token.txt`, select all, copy
-2. Update `GARMINTOKENS_BASE64` on your hosting platform
-3. Trigger a redeploy
-4. Delete `token.txt`
+1. Replace the token the same way you provided it in Step 3 (token directory or
+   `GARMINTOKENS_BASE64`)
+2. Restart the container (`docker restart <container>`; if you changed `.env`,
+   recreate it — a plain restart does not re-read env files with Docker Compose)
+3. Delete `token.txt`
 
 Your AI assistant's configuration and GitHub OAuth are **not** affected.
 
@@ -150,7 +167,9 @@ Your AI assistant's configuration and GitHub OAuth are **not** affected.
 - **User restriction:** GitHub user ID verified against `GITHUB_ALLOWED_USER_ID` on every login (immutable; `GITHUB_ALLOWED_USER` is a legacy username fallback)
 - **Token lifetime:** 30-day access token, 30-day refresh token (rotated on each refresh)
 - **Token persistence:** Redis-compatible store — tokens survive container restarts
-- **Garmin auth:** OAuth via `garminconnect` ≥ 0.3.2, widget+cffi strategy
+- **Garmin auth:** OAuth via `garminconnect` (pinned in `pyproject.toml` — the
+  token format can change between releases, so upgrade deliberately and generate
+  tokens with the same version)
 
 ## Contributing
 

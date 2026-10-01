@@ -3,13 +3,13 @@ GitHub OAuth provider for FastMCP.
 
 Flow:
   1. Claude → GET /authorize  → redirect to GitHub login
-  2. GitHub → GET /auth/callback → verify username → redirect back to Claude
+  2. GitHub → GET /auth/callback → verify user id → redirect back to Claude
   3. Claude → POST /token → exchange code for access token
   4. Claude uses Bearer access token on every MCP request
 
 Tokens are persisted to Upstash Redis (UPSTASH_REDIS_REST_URL +
 UPSTASH_REDIS_REST_TOKEN) so re-authentication is not required after
-Render cold starts. Only _pending and _auth_codes are kept in-memory
+container restarts. Only _pending and _auth_codes are kept in-memory
 (they are short-lived and tied to an active browser session).
 
 If Redis env vars are not set the provider falls back to in-memory storage
@@ -94,11 +94,11 @@ class GitHubOAuthProvider(OAuthAuthorizationServerProvider):
     """
     MCP OAuth Authorization Server backed by GitHub as upstream identity provider.
 
-    Only the GitHub account set in GITHUB_ALLOWED_USER
-    can complete the OAuth flow and receive an MCP access token.
+    Only the GitHub account set in GITHUB_ALLOWED_USER_ID (legacy fallback:
+    GITHUB_ALLOWED_USER) can complete the OAuth flow and receive an MCP access token.
 
     Tokens and client registrations are persisted to Upstash Redis so they
-    survive Render cold starts. Falls back to in-memory if Redis is not configured.
+    survive container restarts. Falls back to in-memory if Redis is not configured.
     """
 
     def __init__(self, github_client_id: str, github_client_secret: str, server_url: str) -> None:

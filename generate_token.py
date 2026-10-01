@@ -2,17 +2,18 @@
 Garmin Connect token generator for cloud/server deployments.
 
 Generates a GARMINTOKENS_BASE64 value that can be set as an environment
-variable on any hosting platform (Render, Railway, Fly.io, etc.).
+variable or token file on any Docker host.
 
 IMPORTANT: Run with uv from inside the project folder to ensure the
-garminconnect version matches what the server uses on Render:
+garminconnect version matches what the server uses:
 
     cd /path/to/garmin-connect-mcp
     ~/.local/bin/uv run --python 3.12 python generate_token.py
 
-The token is written to token.txt — open that file and copy its contents
-into GARMINTOKENS_BASE64 on your hosting platform. Do NOT copy from the
-terminal (the long base64 line wraps and gets truncated).
+The token is written to token.txt (base64). Either decode it into
+garmin_tokens.json in the server's mounted token directory, or paste it into
+GARMINTOKENS_BASE64. Do NOT copy from the terminal (the long base64 line wraps
+and gets truncated). See README → Step 3.
 """
 
 import base64
@@ -45,10 +46,9 @@ def main() -> None:
 
     print(f"\n✓ Token saved to: {output_file}")
     print("\nNext steps:")
-    print("  1. Open token.txt")
-    print("  2. Copy the entire contents (one long line)")
-    print("  3. Paste into GARMINTOKENS_BASE64 on Render → Environment")
-    print("  4. Trigger a Manual Deploy")
+    print("  Token directory:  base64 -d < token.txt > <token-dir>/garmin_tokens.json")
+    print("  or env variable:  paste the contents of token.txt into GARMINTOKENS_BASE64")
+    print("  Then restart the server (see README → Garmin token renewal).")
     print("\nTokens auto-refresh while the server runs regularly.")
     print("Re-run this script if the server has been offline for months.")
     print("\n⚠️  Delete token.txt after pasting — it contains sensitive credentials.")

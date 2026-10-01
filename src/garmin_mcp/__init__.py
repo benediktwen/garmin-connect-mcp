@@ -161,7 +161,7 @@ def init_api() -> Garmin:
 
     logger.error(
         "No Garmin credentials found. "
-        "Set GARMINTOKENS_BASE64 in Render Environment Variables."
+        "Set GARMINTOKENS_BASE64 or mount a token directory at ~/.garminconnect."
     )
     sys.exit(1)
 
@@ -187,5 +187,8 @@ def main() -> None:
 
     workout_templates.register_resources(mcp_app)
 
-    logger.info("GitHub OAuth enabled — only '%s' can authenticate.", os.getenv("GITHUB_ALLOWED_USER", "(not configured)"))
+    logger.info(
+        "GitHub OAuth enabled — only user id '%s' can authenticate.",
+        os.getenv("GITHUB_ALLOWED_USER_ID") or f"(login fallback: {os.getenv('GITHUB_ALLOWED_USER') or 'not configured'})",
+    )
     anyio.run(_serve, mcp_app)
