@@ -11,7 +11,7 @@ dependencies = [
     "python-dotenv==1.0.1",
     "garminconnect==0.3.6",  # pinned: token format can change between releases
     "curl_cffi>=0.7.0",
-    "requests==2.32.4",
+    "requests==2.33.0",
     "mcp==1.29.0",  # pinned to deployed version; 2.x renames mcp.server.fastmcp
     "starlette>=1.0.1",
     "httpx>=0.27.0",
