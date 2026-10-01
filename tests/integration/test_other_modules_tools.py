@@ -26,10 +26,13 @@ from garmin_mcp import (
 from tests.fixtures.garmin_responses import (
     MOCK_DEVICES,
     MOCK_DEVICE_SETTINGS,
+    MOCK_DEVICE_LAST_USED,
     MOCK_WEIGH_INS,
+    MOCK_DAILY_WEIGH_INS,
     MOCK_USER_PROFILE,
     MOCK_UNIT_SYSTEM,
     MOCK_GEAR,
+    MOCK_GEAR_DEFAULTS,
     MOCK_GEAR_STATS,
     MOCK_MENSTRUAL_DATA,
     MOCK_ACTIVITIES,
@@ -138,7 +141,7 @@ async def test_get_weigh_ins_tool(app_with_weight, mock_garmin_client):
 @pytest.mark.asyncio
 async def test_get_daily_weigh_ins_tool(app_with_weight, mock_garmin_client):
     """Test get_daily_weigh_ins tool"""
-    mock_garmin_client.get_daily_weigh_ins.return_value = MOCK_WEIGH_INS[0]
+    mock_garmin_client.get_daily_weigh_ins.return_value = MOCK_DAILY_WEIGH_INS
     result = await app_with_weight.call_tool(
         "get_daily_weigh_ins",
         {"date": "2024-01-15"}
@@ -150,8 +153,8 @@ async def test_get_daily_weigh_ins_tool(app_with_weight, mock_garmin_client):
 @pytest.mark.asyncio
 async def test_delete_weigh_ins_tool(app_with_weight, mock_garmin_client):
     """Test delete_weigh_ins tool"""
-    delete_response = {"status": "success", "message": "Weigh-in deleted"}
-    mock_garmin_client.delete_weigh_ins.return_value = delete_response
+    # API returns count of deleted entries
+    mock_garmin_client.delete_weigh_ins.return_value = 1
     result = await app_with_weight.call_tool(
         "delete_weigh_ins",
         {"date": "2024-01-15", "delete_all": True}
@@ -312,36 +315,60 @@ def app_with_gear(mock_garmin_client):
 
 @pytest.mark.asyncio
 async def test_get_gear_tool(app_with_gear, mock_garmin_client):
-    """Test get_gear tool"""
+    """Test get_gear tool - fetches user_profile_id automatically"""
+    # Setup mocks for all internal API calls
+    mock_garmin_client.get_device_last_used.return_value = MOCK_DEVICE_LAST_USED
     mock_garmin_client.get_gear.return_value = MOCK_GEAR
-    result = await app_with_gear.call_tool("get_gear", {"user_profile_id": "abc123456"})
-    assert result is not None
-    mock_garmin_client.get_gear.assert_called_once_with("abc123456")
-
-
-@pytest.mark.asyncio
-async def test_get_gear_defaults_tool(app_with_gear, mock_garmin_client):
-    """Test get_gear_defaults tool"""
-    defaults = {"activityType": "running", "defaultGearId": 123}
-    mock_garmin_client.get_gear_defaults.return_value = defaults
-    result = await app_with_gear.call_tool(
-        "get_gear_defaults",
-        {"user_profile_id": "abc123456"}
-    )
-    assert result is not None
-    mock_garmin_client.get_gear_defaults.assert_called_once_with("abc123456")
-
-
-@pytest.mark.asyncio
-async def test_get_gear_stats_tool(app_with_gear, mock_garmin_client):
-    """Test get_gear_stats tool"""
+    mock_garmin_client.get_gear_defaults.return_value = MOCK_GEAR_DEFAULTS
     mock_garmin_client.get_gear_stats.return_value = MOCK_GEAR_STATS
+
+    # Call tool without user_profile_id (it's fetched automatically)
+    result = await app_with_gear.call_tool("get_gear", {})
+
+    assert result is not None
+    # Verify the chain of API calls
+    mock_garmin_client.get_device_last_used.assert_called_once()
+    mock_garmin_client.get_gear.assert_called_once_with(80653452)  # from MOCK_DEVICE_LAST_USED
+    mock_garmin_client.get_gear_defaults.assert_called_once_with(80653452)
+
+
+@pytest.mark.asyncio
+async def test_get_gear_tool_without_stats(app_with_gear, mock_garmin_client):
+    """Test get_gear tool with include_stats=False"""
+    mock_garmin_client.get_device_last_used.return_value = MOCK_DEVICE_LAST_USED
+    mock_garmin_client.get_gear.return_value = MOCK_GEAR
+    mock_garmin_client.get_gear_defaults.return_value = MOCK_GEAR_DEFAULTS
+
+    # Call with include_stats=False
+    result = await app_with_gear.call_tool("get_gear", {"include_stats": False})
+
+    assert result is not None
+    # Stats should not be fetched
+    mock_garmin_client.get_gear_stats.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_add_gear_to_activity_tool(app_with_gear, mock_garmin_client):
+    """Test add_gear_to_activity tool"""
+    mock_garmin_client.add_gear_to_activity.return_value = {}
     result = await app_with_gear.call_tool(
-        "get_gear_stats",
-        {"gear_uuid": "abc123"}
+        "add_gear_to_activity",
+        {"activity_id": 12345678901, "gear_uuid": "abc123"}
     )
     assert result is not None
-    mock_garmin_client.get_gear_stats.assert_called_once_with("abc123")
+    mock_garmin_client.add_gear_to_activity.assert_called_once_with(12345678901, "abc123")
+
+
+@pytest.mark.asyncio
+async def test_remove_gear_from_activity_tool(app_with_gear, mock_garmin_client):
+    """Test remove_gear_from_activity tool"""
+    mock_garmin_client.remove_gear_from_activity.return_value = {}
+    result = await app_with_gear.call_tool(
+        "remove_gear_from_activity",
+        {"activity_id": 12345678901, "gear_uuid": "abc123"}
+    )
+    assert result is not None
+    mock_garmin_client.remove_gear_from_activity.assert_called_once_with(12345678901, "abc123")
 
 
 # Women's Health module tests

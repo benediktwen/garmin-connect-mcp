@@ -6,6 +6,10 @@ from unittest.mock import Mock
 from datetime import datetime, timedelta
 from mcp.server.fastmcp import FastMCP
 
+# tests/test_garmin.py is a manual connectivity script that needs real Garmin
+# credentials (run it with `python tests/test_garmin.py`), not a pytest module.
+collect_ignore = ["test_garmin.py"]
+
 
 @pytest.fixture
 def mock_garmin_client():

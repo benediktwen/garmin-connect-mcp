@@ -12,6 +12,8 @@ from tests.fixtures.garmin_responses import (
     MOCK_ACTIVITIES,
     MOCK_ACTIVITY_DETAILS,
     MOCK_ACTIVITY_SPLITS,
+    MOCK_ACTIVITY_COUNT,
+    MOCK_ACTIVITY_TYPES,
 )
 
 
@@ -112,6 +114,35 @@ async def test_get_activity_splits_tool(app_with_activity_management, mock_garmi
     # Verify
     assert result is not None
     mock_garmin_client.get_activity_splits.assert_called_once_with(activity_id)
+
+
+@pytest.mark.asyncio
+async def test_get_activity_splits_elevation_fields(app_with_activity_management, mock_garmin_client):
+    """Test get_activity_splits tool includes elevation gain and loss"""
+    import json
+
+    # Setup mock
+    mock_garmin_client.get_activity_splits.return_value = MOCK_ACTIVITY_SPLITS
+
+    # Call tool
+    activity_id = 12345678901
+    result = await app_with_activity_management.call_tool(
+        "get_activity_splits",
+        {"activity_id": activity_id}
+    )
+
+    # Parse and verify elevation fields
+    data = json.loads(result[0][0].text)
+    assert "laps" in data
+    assert len(data["laps"]) == 2
+
+    # First lap elevation
+    assert data["laps"][0]["elevation_gain_meters"] == 25.5
+    assert data["laps"][0]["elevation_loss_meters"] == 10.2
+
+    # Second lap elevation
+    assert data["laps"][1]["elevation_gain_meters"] == 15.0
+    assert data["laps"][1]["elevation_loss_meters"] == 30.8
 
 
 @pytest.mark.asyncio
@@ -264,6 +295,57 @@ async def test_get_activity_exercise_sets_tool(app_with_activity_management, moc
     # Verify
     assert result is not None
     mock_garmin_client.get_activity_exercise_sets.assert_called_once_with(activity_id)
+
+
+@pytest.mark.asyncio
+async def test_count_activities_tool(app_with_activity_management, mock_garmin_client):
+    """Test count_activities tool returns total activity count"""
+    # Setup mock
+    mock_garmin_client.count_activities.return_value = MOCK_ACTIVITY_COUNT
+
+    # Call tool
+    result = await app_with_activity_management.call_tool(
+        "count_activities",
+        {}
+    )
+
+    # Verify
+    assert result is not None
+    mock_garmin_client.count_activities.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_get_activities_tool(app_with_activity_management, mock_garmin_client):
+    """Test get_activities tool returns paginated activities"""
+    # Setup mock
+    mock_garmin_client.get_activities.return_value = MOCK_ACTIVITIES
+
+    # Call tool
+    result = await app_with_activity_management.call_tool(
+        "get_activities",
+        {"start": 0, "limit": 20}
+    )
+
+    # Verify
+    assert result is not None
+    mock_garmin_client.get_activities.assert_called_once_with(0, 20)
+
+
+@pytest.mark.asyncio
+async def test_get_activity_types_tool(app_with_activity_management, mock_garmin_client):
+    """Test get_activity_types tool returns available activity types"""
+    # Setup mock
+    mock_garmin_client.get_activity_types.return_value = MOCK_ACTIVITY_TYPES
+
+    # Call tool
+    result = await app_with_activity_management.call_tool(
+        "get_activity_types",
+        {}
+    )
+
+    # Verify
+    assert result is not None
+    mock_garmin_client.get_activity_types.assert_called_once()
 
 
 # Error handling tests

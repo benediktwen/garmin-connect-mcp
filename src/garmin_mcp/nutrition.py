@@ -199,7 +199,7 @@ def register_tools(app):
             }
             url = "/nutrition-service/customFood"
             result = garmin_client.client.put("connectapi", url, json=payload, api=True)
-            if result is None:
+            if not result:  # garminconnect returns {} for HTTP 204
                 return "Custom food created (no response data returned)."
             return json.dumps(result, indent=2)
         except Exception as e:
@@ -280,7 +280,7 @@ def register_tools(app):
             }
             url = "/nutrition-service/customFood"
             result = garmin_client.client.put("connectapi", url, json=payload, api=True)
-            if result is None:
+            if not result:  # garminconnect returns {} for HTTP 204
                 return "Custom food updated (no response data returned)."
             return json.dumps(result, indent=2)
         except Exception as e:
@@ -336,7 +336,7 @@ def register_tools(app):
             }
             url = "/nutrition-service/food/logs"
             result = garmin_client.client.put("connectapi", url, json=payload, api=True)
-            if result is None:
+            if not result:  # garminconnect returns {} for HTTP 204
                 return "Food logged successfully."
             return json.dumps(result, indent=2)
         except Exception as e:
