@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "MCP server to access Garmin data"
 requires-python = ">=3.10"
 dependencies = [
-    "python-dotenv==1.0.1",
+    "python-dotenv==1.2.2",
     "garminconnect==0.3.6",  # pinned: token format can change between releases
     "curl_cffi>=0.7.0",
     "requests==2.32.4",
