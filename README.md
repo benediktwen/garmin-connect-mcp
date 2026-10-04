@@ -10,13 +10,32 @@ Taxuspt's original server runs locally on your machine and requires a locally in
 
 ## What it does
 
-Exposes 96+ Garmin Connect tools so AI assistants can query your health data directly:
+Exposes ~150 Garmin Connect tools so AI assistants can query your health data directly:
 
-- Health & Wellness: sleep, HRV, stress, body battery, heart rate, SpO2, respiration
-- Activities: runs, rides, swims — with splits, weather, HR zones
-- Training: readiness, status, VO2max, load
-- Body composition, weight, hydration
-- Workouts, gear, nutrition, challenges
+- Health & Wellness: sleep, HRV, stress, body battery, heart rate, SpO2, respiration, recovery time
+- Activities: runs, rides, swims — with splits, weather, HR zones, FIT file analysis
+- Training: readiness, status, VO2max, load, running tolerance, acclimation, trends
+- Body composition, weight, hydration, energy balance
+- Workouts (incl. builders and Garmin Coach), gear, nutrition, courses, calendar events, challenges
+
+The tool modules are kept in sync with
+[Taxuspt/garmin_mcp](https://github.com/Taxuspt/garmin_mcp); this repo adds the remote
+server layer (GitHub OAuth, persistent token stores, filesystem-tool block).
+
+### Choosing which tools are exposed
+
+Every tool definition is sent to the AI assistant with each conversation, so ~150 tools
+cost noticeably more context than a focused set. Use `GARMIN_ENABLED_TOOLS` (allowlist)
+or `GARMIN_DISABLED_TOOLS` (denylist) — comma-separated tool names — to expose only what
+you need. Unknown names are logged at startup.
+
+### Blocked filesystem tools
+
+`download_activity_file`, `download_course_gpx`, `set_fit_download_dir` and
+`upload_course` read or write arbitrary paths on the server. That is fine for a local
+single-user install, but on a remote server one (possibly prompt-injected) call could
+overwrite the OAuth token store, the Garmin token or the application code. They are
+never registered here, whatever the tool filter says.
 
 ## How it works
 
@@ -143,6 +162,9 @@ In your MCP-compatible AI assistant, add this server as a remote MCP connection:
 | `TOKEN_STORE_KEY` | — | Never | Redis key for the OAuth token store (default `mcp:garmin:token_store`) |
 | `PORT` | — | Never | Listen port inside the container (default `8000`) |
 | `GARMIN_IS_CN` | — | — | Set `true` for Garmin Connect China |
+| `GARMIN_ENABLED_TOOLS` | — | — | Comma-separated allowlist of tool names; if set, only these are exposed |
+| `GARMIN_DISABLED_TOOLS` | — | — | Comma-separated denylist (ignored when an allowlist is set) |
+| `GARMIN_MCP_CALL_TIMEOUT` | — | — | Seconds before a stalled Garmin request is abandoned (default `90`, `0` disables) |
 
 \* Set either `TOKEN_STORE_FILE` or both Upstash variables. Without either, tokens
 are kept in memory only and every restart requires reconnecting the AI assistant.
@@ -176,6 +198,7 @@ Your AI assistant's configuration and GitHub OAuth are **not** affected.
 ## Architecture
 
 - **Transport:** Streamable HTTP (MCP 1.x) via FastMCP + uvicorn
+- **Resilience:** every Garmin call runs with a timeout, so one stalled request cannot hang the server
 - **Auth:** GitHub OAuth 2.0 — server acts as Authorization Server, GitHub as Identity Provider
 - **User restriction:** GitHub user ID verified against `GITHUB_ALLOWED_USER_ID` on every login (immutable; `GITHUB_ALLOWED_USER` is a legacy username fallback)
 - **Token lifetime:** 30-day access token, 30-day refresh token (rotated on each refresh)
