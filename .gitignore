@@ -12,6 +12,7 @@ build/
 # Virtual environments
 .env
 .venv/
+.uv-cache/
 *.log
 .DS_Store
 .claude.md
@@ -19,7 +20,9 @@ build/
 docs/*
 .gitignore
 playground/*
+scratch/*
 tests/fixtures/captured/*
+!tests/fixtures/captured/poc_walk_run.json
 
 # Garmin token files — never commit
 .garminconnect/
@@ -27,3 +30,8 @@ tests/fixtures/captured/*
 garmin_tokens.json
 *.garminconnect*
 token.txt
+
+# Local lockfile (not tracked) and file-based OAuth token store
+uv.lock
+state/
+token_store.json

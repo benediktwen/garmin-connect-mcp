@@ -3,8 +3,9 @@
 import os
 import sys
 import tempfile
+import base64
 from pathlib import Path
-from unittest.mock import Mock, patch, call
+from unittest.mock import Mock, patch, call, mock_open
 
 import pytest
 
@@ -14,6 +15,7 @@ from garmin_mcp.auth_cli import (
     authenticate,
     verify_tokens,
     main,
+    _secure_token_dir,
 )
 
 
@@ -128,22 +130,22 @@ class TestAuthenticate:
     @patch("garmin_mcp.auth_cli.validate_tokens")
     @patch("garmin_mcp.auth_cli.get_credentials")
     @patch("garmin_mcp.auth_cli.Garmin")
-    def test_existing_valid_tokens_with_force(self, mock_garmin, mock_get_creds, mock_validate, mock_exists):
+    @patch("garmin_mcp.auth_cli._verify_saved_tokens", return_value=(True, "Test User"))
+    @patch("garmin_mcp.auth_cli.os.chmod")
+    def test_existing_valid_tokens_with_force(self, mock_chmod, mock_verify, mock_garmin, mock_get_creds, mock_validate, mock_exists):
         """Test that force flag re-authenticates even with valid tokens."""
         mock_exists.return_value = True
         mock_validate.return_value = (True, "")
         mock_get_creds.return_value = ("test@example.com", "secret")
 
         mock_garmin_instance = Mock()
-        mock_garmin_instance.login = Mock()
-        mock_garmin_instance.garth = Mock()
-        mock_garmin_instance.garth.dump = Mock()
-        mock_garmin_instance.garth.dumps = Mock(return_value="base64data")
-        mock_garmin_instance.get_full_name = Mock(return_value="Test User")
+        mock_garmin_instance.login = Mock(return_value=(None, None))
+        mock_garmin_instance.client = Mock()
         mock_garmin.return_value = mock_garmin_instance
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            result = authenticate(tmpdir, f"{tmpdir}/base64", force_reauth=True)
+            with patch("builtins.open", mock_open(read_data="{}")):
+                result = authenticate(tmpdir, f"{tmpdir}/base64", force_reauth=True)
 
         assert result is True
         mock_garmin_instance.login.assert_called_once()
@@ -151,33 +153,101 @@ class TestAuthenticate:
     @patch("garmin_mcp.auth_cli.token_exists")
     @patch("garmin_mcp.auth_cli.get_credentials")
     @patch("garmin_mcp.auth_cli.Garmin")
-    def test_successful_authentication(self, mock_garmin, mock_get_creds, mock_exists):
+    @patch("garmin_mcp.auth_cli._verify_saved_tokens", return_value=(True, "Test User"))
+    @patch("garmin_mcp.auth_cli.os.chmod")
+    def test_successful_authentication(self, mock_chmod, mock_verify, mock_garmin, mock_get_creds, mock_exists):
         """Test successful authentication flow."""
         mock_exists.return_value = False
         mock_get_creds.return_value = ("test@example.com", "secret")
 
         mock_garmin_instance = Mock()
-        mock_garmin_instance.login = Mock()
-        mock_garmin_instance.garth = Mock()
-        mock_garmin_instance.garth.dump = Mock()
-        mock_garmin_instance.garth.dumps = Mock(return_value="base64data")
-        mock_garmin_instance.get_full_name = Mock(return_value="Test User")
+        mock_garmin_instance.login = Mock(return_value=(None, None))
+        mock_garmin_instance.client = Mock()
         mock_garmin.return_value = mock_garmin_instance
+
+        token_data = '{"token": "test"}'
+        expected_b64 = base64.b64encode(token_data.encode()).decode()
+        m = mock_open(read_data=token_data)
 
         with tempfile.TemporaryDirectory() as tmpdir:
             base64_path = f"{tmpdir}/base64.txt"
-            result = authenticate(tmpdir, base64_path, force_reauth=False)
+            with patch("builtins.open", m):
+                result = authenticate(tmpdir, base64_path, force_reauth=False)
 
-            assert result is True
-            mock_garmin_instance.login.assert_called_once()
-            mock_garmin_instance.garth.dump.assert_called_once_with(tmpdir)
-            mock_garmin_instance.get_full_name.assert_called_once()
+        assert result is True
+        mock_garmin_instance.login.assert_called_once()
+        mock_garmin_instance.client.dump.assert_called_once_with(tmpdir)
+        # Tokens are verified by an independent token-based login
+        mock_verify.assert_called_once()
+        # Verify base64-encoded token data was written to the base64 file
+        m().write.assert_called_once_with(expected_b64)
+        # Verify restrictive permissions were applied to the base64 file
+        mock_chmod.assert_any_call(os.path.expanduser(base64_path), 0o600)
 
-            # Check base64 file was created (use expanded path)
-            expanded_base64_path = os.path.expanduser(base64_path)
-            base64_file = Path(expanded_base64_path)
-            assert base64_file.exists()
-            assert base64_file.read_text() == "base64data"
+    @patch("garmin_mcp.auth_cli.token_exists", return_value=False)
+    @patch(
+        "garmin_mcp.auth_cli.get_credentials",
+        return_value=("test@example.com", "secret"),
+    )
+    @patch("garmin_mcp.auth_cli.Garmin")
+    @patch(
+        "garmin_mcp.auth_cli._verify_saved_tokens",
+        return_value=(True, "Test User"),
+    )
+    @patch("garmin_mcp.auth_cli.os.chmod")
+    def test_authentication_resolves_home_in_token_paths(
+        self,
+        mock_chmod,
+        mock_verify,
+        mock_garmin,
+        _mock_get_creds,
+        mock_exists,
+        monkeypatch,
+        tmp_path,
+    ):
+        """The CLI writes and verifies tokens at the same resolved paths."""
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
+        mock_garmin.return_value.login.return_value = (None, None)
+
+        with patch("builtins.open", mock_open(read_data="{}")):
+            result = authenticate(
+                "${HOME}/.garminconnect",
+                "${HOME}/.garminconnect_base64",
+            )
+
+        expected_token_path = str(tmp_path / ".garminconnect")
+        expected_base64_path = str(tmp_path / ".garminconnect_base64")
+        assert result is True
+        mock_exists.assert_called_once_with(expected_token_path)
+        mock_garmin.return_value.client.dump.assert_called_once_with(
+            expected_token_path
+        )
+        mock_verify.assert_called_once_with(expected_token_path, False)
+        mock_chmod.assert_any_call(expected_base64_path, 0o600)
+
+    @patch("garmin_mcp.auth_cli.token_exists")
+    @patch("garmin_mcp.auth_cli.get_credentials")
+    @patch("garmin_mcp.auth_cli.Garmin")
+    @patch("garmin_mcp.auth_cli._verify_saved_tokens")
+    @patch("garmin_mcp.auth_cli.os.chmod")
+    def test_unverifiable_tokens_fail(self, mock_chmod, mock_verify, mock_garmin, mock_get_creds, mock_exists):
+        """Login that produces unauthenticated tokens must fail, not report success."""
+        mock_exists.return_value = False
+        mock_get_creds.return_value = ("test@example.com", "secret")
+        # Login "succeeds" but the saved tokens don't actually authenticate.
+        mock_verify.return_value = (False, "session is not authenticated (no profile returned)")
+
+        mock_garmin_instance = Mock()
+        mock_garmin_instance.login = Mock(return_value=(None, None))
+        mock_garmin_instance.client = Mock()
+        mock_garmin.return_value = mock_garmin_instance
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with patch("builtins.open", mock_open(read_data="{}")):
+                result = authenticate(tmpdir, f"{tmpdir}/base64", force_reauth=False)
+
+        assert result is False
 
     @patch("garmin_mcp.auth_cli.token_exists")
     @patch("garmin_mcp.auth_cli.get_credentials")
@@ -368,55 +438,89 @@ class TestAuthenticateIsCn:
     @patch("garmin_mcp.auth_cli.token_exists")
     @patch("garmin_mcp.auth_cli.get_credentials")
     @patch("garmin_mcp.auth_cli.Garmin")
-    def test_authenticate_passes_is_cn_true(self, mock_garmin, mock_get_creds, mock_exists):
+    @patch("garmin_mcp.auth_cli._verify_saved_tokens", return_value=(True, "Test User"))
+    @patch("garmin_mcp.auth_cli.os.chmod")
+    def test_authenticate_passes_is_cn_true(self, mock_chmod, mock_verify, mock_garmin, mock_get_creds, mock_exists):
         """Test that is_cn=True is passed to Garmin constructor."""
         mock_exists.return_value = False
         mock_get_creds.return_value = ("test@example.com", "secret")
 
         mock_garmin_instance = Mock()
-        mock_garmin_instance.login = Mock()
-        mock_garmin_instance.garth = Mock()
-        mock_garmin_instance.garth.dump = Mock()
-        mock_garmin_instance.garth.dumps = Mock(return_value="base64data")
-        mock_garmin_instance.get_full_name = Mock(return_value="Test User")
+        mock_garmin_instance.login = Mock(return_value=(None, None))
+        mock_garmin_instance.client = Mock()
         mock_garmin.return_value = mock_garmin_instance
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            result = authenticate(tmpdir, f"{tmpdir}/base64", force_reauth=False, is_cn=True)
+            with patch("builtins.open", mock_open(read_data="{}")):
+                result = authenticate(tmpdir, f"{tmpdir}/base64", force_reauth=False, is_cn=True)
 
         assert result is True
-        # Verify Garmin was called with is_cn=True
+        # Verify Garmin was called with is_cn=True (verification login is mocked out)
         mock_garmin.assert_called_once_with(
             email="test@example.com",
             password="secret",
             is_cn=True,
             prompt_mfa=get_mfa,
+            return_on_mfa=True,
         )
 
     @patch("garmin_mcp.auth_cli.token_exists")
     @patch("garmin_mcp.auth_cli.get_credentials")
     @patch("garmin_mcp.auth_cli.Garmin")
-    def test_authenticate_passes_is_cn_false(self, mock_garmin, mock_get_creds, mock_exists):
+    @patch("garmin_mcp.auth_cli._verify_saved_tokens", return_value=(True, "Test User"))
+    @patch("garmin_mcp.auth_cli.os.chmod")
+    def test_authenticate_passes_is_cn_false(self, mock_chmod, mock_verify, mock_garmin, mock_get_creds, mock_exists):
         """Test that is_cn=False is passed to Garmin constructor by default."""
         mock_exists.return_value = False
         mock_get_creds.return_value = ("test@example.com", "secret")
 
         mock_garmin_instance = Mock()
-        mock_garmin_instance.login = Mock()
-        mock_garmin_instance.garth = Mock()
-        mock_garmin_instance.garth.dump = Mock()
-        mock_garmin_instance.garth.dumps = Mock(return_value="base64data")
-        mock_garmin_instance.get_full_name = Mock(return_value="Test User")
+        mock_garmin_instance.login = Mock(return_value=(None, None))
+        mock_garmin_instance.client = Mock()
         mock_garmin.return_value = mock_garmin_instance
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            result = authenticate(tmpdir, f"{tmpdir}/base64", force_reauth=False)
+            with patch("builtins.open", mock_open(read_data="{}")):
+                result = authenticate(tmpdir, f"{tmpdir}/base64", force_reauth=False)
 
         assert result is True
-        # Verify Garmin was called with is_cn=False
+        # Verify Garmin was called with is_cn=False (verification login is mocked out)
         mock_garmin.assert_called_once_with(
             email="test@example.com",
             password="secret",
             is_cn=False,
             prompt_mfa=get_mfa,
+            return_on_mfa=True,
         )
+
+
+class TestSecureTokenDir:
+    """Tests for _secure_token_dir: verifies owner-only permissions are applied."""
+
+    def test_directory_gets_700_permissions(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            _secure_token_dir(tmpdir)
+            assert oct(os.stat(tmpdir).st_mode)[-3:] == "700"
+
+    def test_files_inside_get_600_permissions(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            token_file = os.path.join(tmpdir, "garmin_tokens.json")
+            with open(token_file, "w") as f:
+                f.write("{}")
+            _secure_token_dir(tmpdir)
+            assert oct(os.stat(token_file).st_mode)[-3:] == "600"
+
+    def test_multiple_files_all_get_600_permissions(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            for name in ("garmin_tokens.json", "oauth1_tokens.json"):
+                with open(os.path.join(tmpdir, name), "w") as f:
+                    f.write("{}")
+            _secure_token_dir(tmpdir)
+            for name in ("garmin_tokens.json", "oauth1_tokens.json"):
+                path = os.path.join(tmpdir, name)
+                assert oct(os.stat(path).st_mode)[-3:] == "600", f"{name} should be 600"
+
+    def test_empty_directory_only_sets_dir_permissions(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            _secure_token_dir(tmpdir)
+            assert oct(os.stat(tmpdir).st_mode)[-3:] == "700"

@@ -8,9 +8,10 @@ import argparse
 import os
 import sys
 import getpass
+import base64
 
 import requests
-from garminconnect import Garmin, GarminConnectAuthenticationError
+from garminconnect import Garmin, GarminConnectAuthenticationError, GarminConnectConnectionError, GarminConnectTooManyRequestsError
 
 from garmin_mcp.token_utils import (
     get_token_path,
@@ -18,6 +19,8 @@ from garmin_mcp.token_utils import (
     token_exists,
     validate_tokens,
     get_token_info,
+    resolve_token_path,
+    secure_token_dir as _secure_token_dir,
 )
 
 
@@ -75,6 +78,36 @@ def get_credentials() -> tuple[str, str]:
     return email, password
 
 
+def _verify_saved_tokens(token_path: str, is_cn: bool = False) -> tuple[bool, str]:
+    """Independently confirm the freshly saved tokens actually authenticate.
+
+    Performs a clean token-based login (which loads the social profile and
+    raises on an unauthenticated session — unlike the ``return_on_mfa`` login
+    used to obtain the tokens, which skips that check). This is what turns a
+    silent "logged in as None" into a real failure.
+
+    Returns:
+        (True, full_name) on success, or (False, error_summary) on failure.
+    """
+    import io
+
+    print("\nVerifying tokens...")
+
+    old_stderr = sys.stderr
+    sys.stderr = io.StringIO()
+    try:
+        garmin = Garmin(is_cn=is_cn)
+        garmin.login(token_path)
+        name = garmin.get_full_name()
+        if not name:
+            return False, "session is not authenticated (no profile returned)"
+        return True, name
+    except Exception as e:
+        return False, str(e).split(":")[0].strip() or e.__class__.__name__
+    finally:
+        sys.stderr = old_stderr
+
+
 def authenticate(token_path: str, token_base64_path: str, force_reauth: bool = False, is_cn: bool = False) -> bool:
     """Authenticate with Garmin Connect and save tokens.
 
@@ -88,6 +121,9 @@ def authenticate(token_path: str, token_base64_path: str, force_reauth: bool = F
         bool: True if authentication succeeded, False otherwise
     """
     import io
+
+    token_path = resolve_token_path(token_path)
+    token_base64_path = resolve_token_path(token_base64_path)
 
     # Check if tokens already exist and are valid
     if not force_reauth and token_exists(token_path):
@@ -123,32 +159,42 @@ def authenticate(token_path: str, token_base64_path: str, force_reauth: bool = F
     print(f"Email: {email}")
 
     try:
-        garmin = Garmin(email=email, password=password, is_cn=is_cn, prompt_mfa=get_mfa)
-        garmin.login()
+        garmin = Garmin(email=email, password=password, is_cn=is_cn, prompt_mfa=get_mfa, return_on_mfa=True)
+        result1, result2 = garmin.login()
+
+        if result1 == "needs_mfa":
+            mfa_code = get_mfa()
+            garmin.resume_login(result2, mfa_code)
 
         # Save tokens to directory
-        auth = getattr(garmin, 'garth', None) or getattr(garmin, 'client', None)
-        auth.dump(token_path)
-        print(f"\n✓ OAuth tokens saved to: {os.path.expanduser(token_path)}")
+        garmin.client.dump(token_path)
+        _secure_token_dir(token_path)
+        print(f"\n✓ OAuth tokens saved to: {token_path}")
 
         # Save tokens as base64
-        token_base64 = auth.dumps()
-        expanded_base64_path = os.path.expanduser(token_base64_path)
-        with open(expanded_base64_path, "w") as token_file:
+        token_json_path = os.path.join(token_path, "garmin_tokens.json")
+        with open(token_json_path, "r") as f:
+            token_data = f.read()
+        token_base64 = base64.b64encode(token_data.encode()).decode()
+        with open(token_base64_path, "w") as token_file:
             token_file.write(token_base64)
-        print(f"✓ OAuth tokens (base64) saved to: {expanded_base64_path}")
+        os.chmod(token_base64_path, 0o600)
+        print(f"✓ OAuth tokens (base64) saved to: {token_base64_path}")
 
-        # Verify tokens work
-        print("\nVerifying tokens...")
-        try:
-            # Try to get user's full name as a simple verification
-            full_name = garmin.get_full_name()
-            print(f"✓ Authentication successful!")
-            print(f"  Logged in as: {full_name}")
-        except Exception:
-            # Fallback: just confirm tokens were saved
-            print(f"✓ Authentication successful!")
-            print(f"  OAuth tokens saved and ready to use.")
+        # Verify tokens work with an independent token-based login. The login
+        # above runs with return_on_mfa=True, which skips profile loading, so a
+        # rate-limited run can "succeed" with an unauthenticated session. Check
+        # rather than trust the dump, so a bad login fails loudly instead of
+        # printing "Logged in as: None" and exiting 0.
+        is_valid, name_or_err = _verify_saved_tokens(token_path, is_cn)
+        if not is_valid:
+            print(f"\n✗ Authentication failed: saved tokens do not authenticate", file=sys.stderr)
+            print(f"  {name_or_err}", file=sys.stderr)
+            print("  Garmin may be rate-limiting your IP — wait a few minutes and retry.", file=sys.stderr)
+            return False
+
+        print(f"✓ Authentication successful!")
+        print(f"  Logged in as: {name_or_err}")
 
         print("\n" + "=" * 60)
         print("SUCCESS: You can now use the Garmin MCP server!")
@@ -177,6 +223,21 @@ def authenticate(token_path: str, token_base64_path: str, force_reauth: bool = F
 
         return False
 
+    except GarminConnectTooManyRequestsError:
+        print(f"\n✗ Too many requests. Please wait a few minutes and try again.", file=sys.stderr)
+        return False
+
+    except GarminConnectConnectionError as e:
+        error_msg = str(e)
+        print(f"\n✗ Authentication error", file=sys.stderr)
+        if "401" in error_msg or "403" in error_msg:
+            print("  Invalid credentials. Please check your email and password.", file=sys.stderr)
+        elif "500" in error_msg or "503" in error_msg:
+            print("  Garmin Connect service issue. Please try again later.", file=sys.stderr)
+        else:
+            print(f"  {error_msg.split(':')[0]}", file=sys.stderr)
+        return False
+
     except requests.exceptions.HTTPError as e:
         print(f"\n✗ Network error", file=sys.stderr)
 
@@ -194,15 +255,10 @@ def authenticate(token_path: str, token_base64_path: str, force_reauth: bool = F
 
     except Exception as e:
         error_msg = str(e)
-        print(f"\n✗ Authentication error", file=sys.stderr)
+        print(f"\n✗ Unexpected error", file=sys.stderr)
 
-        if "429" in error_msg:
-            print("  Too many requests. Please wait a few minutes and try again.", file=sys.stderr)
-        elif "401" in error_msg or "403" in error_msg:
-            print("  Invalid credentials. Please check your email and password.", file=sys.stderr)
-        elif "500" in error_msg or "503" in error_msg:
-            print("  Garmin Connect service issue. Please try again later.", file=sys.stderr)
-        elif "timeout" in error_msg.lower():
+        # Only show detailed error in debug scenarios
+        if "timeout" in error_msg.lower():
             print("  Connection timeout. Please check your internet connection.", file=sys.stderr)
         elif "connection" in error_msg.lower():
             print("  Network connection issue. Please check your internet.", file=sys.stderr)

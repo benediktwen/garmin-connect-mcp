@@ -4,7 +4,38 @@ import os
 from pathlib import Path
 from typing import Tuple
 
-from garminconnect import Garmin
+from garminconnect import Garmin, GarminConnectConnectionError
+
+
+def resolve_token_path(path: str) -> str:
+    """Resolve environment variables and the user-home marker in a token path.
+
+    Some MCP clients leave ``${HOME}`` unresolved when it comes from a nested
+    user-config default. The explicit replacement also covers Windows, where
+    ``HOME`` may be unset but Python can still resolve ``~`` via ``USERPROFILE``.
+    """
+    expanded = os.path.expandvars(path)
+    expanded = expanded.replace("${HOME}", os.path.expanduser("~"))
+    return os.path.expanduser(expanded)
+
+
+def secure_token_dir(path: str) -> None:
+    """Set owner-only permissions on a token directory and the files inside it.
+
+    OAuth tokens are ~6-month bearer credentials to the full Garmin account, so
+    they must not be left world-readable on multi-user hosts. Safe to call on a
+    path that is a single file rather than a directory.
+    """
+    expanded = resolve_token_path(path)
+    if not os.path.exists(expanded):
+        return
+    if os.path.isdir(expanded):
+        os.chmod(expanded, 0o700)
+        for entry in os.scandir(expanded):
+            if entry.is_file():
+                os.chmod(entry.path, 0o600)
+    else:
+        os.chmod(expanded, 0o600)
 
 
 def get_token_path() -> str:
@@ -13,7 +44,7 @@ def get_token_path() -> str:
     Returns:
         str: Path to token storage directory
     """
-    return os.getenv("GARMINTOKENS") or "~/.garminconnect"
+    return resolve_token_path(os.getenv("GARMINTOKENS") or "~/.garminconnect")
 
 
 def get_token_base64_path() -> str:
@@ -22,7 +53,9 @@ def get_token_base64_path() -> str:
     Returns:
         str: Path to base64 token file
     """
-    return os.getenv("GARMINTOKENS_BASE64") or "~/.garminconnect_base64"
+    return resolve_token_path(
+        os.getenv("GARMINTOKENS_BASE64") or "~/.garminconnect_base64"
+    )
 
 
 def token_exists(token_path: str = None) -> bool:
@@ -37,7 +70,7 @@ def token_exists(token_path: str = None) -> bool:
     if token_path is None:
         token_path = get_token_path()
 
-    expanded_path = Path(os.path.expanduser(token_path))
+    expanded_path = Path(resolve_token_path(token_path))
     return expanded_path.exists()
 
 
@@ -56,6 +89,7 @@ def validate_tokens(token_path: str = None, is_cn: bool = False) -> Tuple[bool, 
 
     if token_path is None:
         token_path = get_token_path()
+    token_path = resolve_token_path(token_path)
 
     # Check if tokens exist
     if not token_exists(token_path):
@@ -86,12 +120,19 @@ def validate_tokens(token_path: str = None, is_cn: bool = False) -> Tuple[bool, 
 
     except FileNotFoundError:
         return False, f"Token files not found in: {token_path}"
-    except Exception as e:
+    except GarminConnectConnectionError as e:
         error_msg = str(e)
         if "401" in error_msg or "Unauthorized" in error_msg:
             return False, "Tokens expired or invalid"
         elif "403" in error_msg or "Forbidden" in error_msg:
             return False, "Access denied with current tokens"
+        else:
+            return False, f"Authentication error: {error_msg.split(':')[0]}"
+    except Exception as e:
+        error_msg = str(e)
+        # Clean up error message
+        if "401" in error_msg:
+            return False, "Tokens expired or invalid"
         else:
             return False, f"Validation error: {error_msg.split(':')[0]}"
     finally:
@@ -112,9 +153,11 @@ def remove_tokens(token_path: str = None, base64_path: str = None) -> None:
         token_path = get_token_path()
     if base64_path is None:
         base64_path = get_token_base64_path()
+    token_path = resolve_token_path(token_path)
+    base64_path = resolve_token_path(base64_path)
 
     # Remove token directory
-    expanded_token_path = Path(os.path.expanduser(token_path))
+    expanded_token_path = Path(token_path)
     if expanded_token_path.exists():
         if expanded_token_path.is_dir():
             shutil.rmtree(expanded_token_path)
@@ -122,7 +165,7 @@ def remove_tokens(token_path: str = None, base64_path: str = None) -> None:
             expanded_token_path.unlink()
 
     # Remove base64 token file
-    expanded_base64_path = Path(os.path.expanduser(base64_path))
+    expanded_base64_path = Path(base64_path)
     if expanded_base64_path.exists():
         expanded_base64_path.unlink()
 
@@ -139,6 +182,7 @@ def get_token_info(token_path: str = None, is_cn: bool = False) -> dict:
     """
     if token_path is None:
         token_path = get_token_path()
+    token_path = resolve_token_path(token_path)
 
     exists = token_exists(token_path)
     is_valid = False
@@ -149,7 +193,7 @@ def get_token_info(token_path: str = None, is_cn: bool = False) -> dict:
 
     return {
         "path": token_path,
-        "expanded_path": os.path.expanduser(token_path),
+        "expanded_path": token_path,
         "exists": exists,
         "valid": is_valid,
         "error": error_msg
