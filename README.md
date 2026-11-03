@@ -41,7 +41,7 @@ never registered here, whatever the tool filter says.
 
 ```
 AI assistant → /authorize → GitHub login (+ 2FA) → /auth/callback
-             → username verified → MCP access token issued → MCP connection
+             → user id verified → consent page → MCP access token issued → MCP connection
 ```
 
 Access is protected by **GitHub OAuth** — only the GitHub account set in
@@ -52,7 +52,9 @@ in the AI assistant's configuration.
 1. The AI assistant detects the MCP server requires OAuth
 2. A browser window opens — you log in to GitHub with 2FA
 3. The server verifies your GitHub account matches `GITHUB_ALLOWED_USER_ID`
-4. The AI assistant receives a 30-day access token and a 30-day refresh token
+4. A consent page shows which client is asking and where it will be redirected —
+   click **Allow** (only if you started the connection yourself)
+5. The AI assistant receives a 30-day access token and a 30-day refresh token
 
 > **Restart note:** OAuth tokens are persisted to the token store, so
 > the AI assistant does **not** need to re-authenticate after a container
@@ -155,6 +157,7 @@ In your MCP-compatible AI assistant, add this server as a remote MCP connection:
 | `GITHUB_CLIENT_SECRET` | ✅ | Never | GitHub OAuth App client secret |
 | `GITHUB_ALLOWED_USER_ID` | ✅ | Never | Immutable numeric GitHub user ID allowed to connect (preferred) |
 | `GITHUB_ALLOWED_USER` | — | Never | GitHub username — legacy fallback, used only if `GITHUB_ALLOWED_USER_ID` is unset |
+| `OAUTH_ALLOWED_REDIRECT_URIS` | — | Never | Comma-separated redirect URIs a dynamically registered OAuth client may use. Default: the Claude callbacks `https://claude.ai/api/mcp/auth_callback` and `https://claude.com/api/mcp/auth_callback`. A loopback entry without a port (e.g. `http://127.0.0.1/callback`) matches any port |
 | `SERVER_URL` | ✅ | Never | Public base URL of this service |
 | `TOKEN_STORE_FILE` | ✅* | Never | Path of the OAuth token store file (in a mounted volume); takes precedence over Redis |
 | `UPSTASH_REDIS_REST_URL` | ✅* | Never | Upstash Redis REST endpoint (alternative to `TOKEN_STORE_FILE`) |
@@ -201,6 +204,8 @@ Your AI assistant's configuration and GitHub OAuth are **not** affected.
 - **Resilience:** every Garmin call runs with a timeout, so one stalled request cannot hang the server
 - **Auth:** GitHub OAuth 2.0 — server acts as Authorization Server, GitHub as Identity Provider
 - **User restriction:** GitHub user ID verified against `GITHUB_ALLOWED_USER_ID` on every login (immutable; `GITHUB_ALLOWED_USER` is a legacy username fallback)
+- **Client registration:** dynamic registration is open (Claude registers itself), but only redirect URIs in `OAUTH_ALLOWED_REDIRECT_URIS` are accepted and every login ends on a consent page naming the client and its redirect URI — a client registered by someone else cannot obtain a code for your account
+- **In-memory OAuth state:** pending logins (10 min), consent pages (5 min) and authorization codes (5 min) expire and are capped, so unauthenticated requests cannot grow memory without bound
 - **Token lifetime:** 30-day access token, 30-day refresh token (rotated on each refresh)
 - **Token persistence:** `TOKEN_STORE_FILE` (atomic, 0600) or Upstash Redis — tokens survive container restarts
 - **Garmin auth:** OAuth via `garminconnect` (pinned in `pyproject.toml` — the
