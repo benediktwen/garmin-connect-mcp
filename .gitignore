@@ -31,7 +31,6 @@ garmin_tokens.json
 *.garminconnect*
 token.txt
 
-# Local lockfile (not tracked) and file-based OAuth token store
-uv.lock
+# File-based OAuth token store
 state/
 token_store.json
