@@ -114,7 +114,7 @@ Then provide the token to the server in one of two ways:
 
 - **Token directory (recommended):** decode it into a file named
   `garmin_tokens.json` and mount its directory into the container at
-  `/root/.garminconnect`. `garminconnect` writes refreshed tokens back to this
+  `/home/app/.garminconnect`. `garminconnect` writes refreshed tokens back to this
   file, so the session survives restarts.
   ```bash
   mkdir -p ./garmin-tokens && base64 -d < token.txt > ./garmin-tokens/garmin_tokens.json
@@ -132,10 +132,12 @@ Delete `token.txt` afterwards — it contains your Garmin session.
    ```bash
    docker build -t garmin-connect-mcp .
    docker run -d --env-file .env -p 8000:8000 \
-     -v "$PWD/garmin-tokens:/root/.garminconnect" \
+     -v "$PWD/garmin-tokens:/home/app/.garminconnect" \
      -v "$PWD/state:/state" -e TOKEN_STORE_FILE=/state/token_store.json \
      garmin-connect-mcp
    ```
+   The container runs as UID 1000, not as root: `garmin-tokens/` and `state/`
+   must be owned by that user (`sudo chown -R 1000:1000 garmin-tokens state`).
 3. Put it behind an HTTPS reverse proxy and set `SERVER_URL` to the public URL
 4. Set the environment variables listed below (in `.env` — never commit it)
 
@@ -215,6 +217,10 @@ Your AI assistant's configuration and GitHub OAuth are **not** affected.
 ## Tests and deploy
 
 A push to `main` runs the test suite (`pip install -e ".[test]" && pytest -q`) on GitHub Actions; only if it passes does the workflow deploy to the server. Run the same command locally before pushing.
+
+The Docker image installs the exact versions in `uv.lock`, checked by hash. After changing a dependency in `pyproject.toml`, run `uv lock` and commit the lockfile; `uv lock --upgrade` moves everything to the newest allowed versions.
+
+The container runs as an unprivileged user (UID/GID 1000 by default). The host directory mounted at `/state` must be owned by that UID. If your deploy user has a different UID, build with `--build-arg APP_UID=$(id -u) --build-arg APP_GID=$(id -g)`.
 
 ## Contributing
 
